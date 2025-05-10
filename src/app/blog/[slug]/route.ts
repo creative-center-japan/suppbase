@@ -3,7 +3,10 @@ import path from 'path';
 import fs from 'fs';
 import matter from 'gray-matter';
 
-export async function GET(req: NextRequest, context: { params: { slug: string } }) {
+export async function GET(
+  _req: NextRequest,
+  context: { params: Record<string, string> }
+) {
   const slug = context.params?.slug;
 
   if (!slug || typeof slug !== 'string') {
