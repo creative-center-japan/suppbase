@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 
 const tabs = [
   { id: 'whey', label: 'ホエイ' },
@@ -42,14 +43,13 @@ const RankingSection = ({ items }: { items: ProductItem[] }) => {
               : 'border border-gray-200'
           }`}
         >
-          <img
+          <Image
             src={item.imageUrl || '/no-image.png'}
             alt={item.title}
-            className="w-24 h-24 object-contain rounded"
-            onError={(e) => {
-              const target = e.currentTarget;
-              target.src = '/no-image.png';
-            }}
+            width={96}
+            height={96}
+            className="object-contain rounded"
+            unoptimized={item.imageUrl?.includes('amazon') || false}
           />
           <div className="flex-1">
             <div className="flex items-center justify-between">
