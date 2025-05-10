@@ -1,3 +1,4 @@
+// src/app/blog/[slug]/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
 import fs from 'fs';
@@ -20,7 +21,7 @@ export async function GET(
 
     return NextResponse.json({ title: data.title, date: data.date, content });
   } catch (err) {
-    console.error(err);
+    console.error(err); // ESLint対策
     return NextResponse.json({ error: 'Error reading article' }, { status: 500 });
   }
 }
