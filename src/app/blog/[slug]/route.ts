@@ -18,7 +18,8 @@ export async function GET(
     const { data, content } = matter(fileContent);
 
     return NextResponse.json({ title: data.title, date: data.date, content });
-  } catch (_err) {
+  } catch (err) {
+    console.error(err); // ← これを追加して unused-vars を回避
     return NextResponse.json({ error: 'Error reading article' }, { status: 500 });
   }
 }
