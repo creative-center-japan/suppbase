@@ -5,10 +5,11 @@ import matter from 'gray-matter';
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { slug: string } }
+  context: { params: { slug: string } }
 ) {
   try {
-    const filePath = path.join(process.cwd(), 'articles', `${params.slug}.md`);
+    const { slug } = context.params;
+    const filePath = path.join(process.cwd(), 'articles', `${slug}.md`);
 
     if (!fs.existsSync(filePath)) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
@@ -19,7 +20,7 @@ export async function GET(
 
     return NextResponse.json({ title: data.title, date: data.date, content });
   } catch (err) {
-    console.error(err); // ← これを追加して unused-vars を回避
+    console.error(err);
     return NextResponse.json({ error: 'Error reading article' }, { status: 500 });
   }
 }
