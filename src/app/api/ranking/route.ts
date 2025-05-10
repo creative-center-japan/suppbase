@@ -1,5 +1,3 @@
-// src/app/api/ranking/route.ts
-
 import { NextRequest, NextResponse } from 'next/server';
 import Database from 'better-sqlite3';
 import path from 'path';
@@ -19,7 +17,7 @@ export async function GET(req: NextRequest) {
   } else if (type === 'soy') {
     whereClause = "WHERE title LIKE '%ソイ%'";
   } else if (type === 'isolate') {
-    whereClause = "WHERE title LIKE '%プロテイン%' AND (title LIKE '%WPI%' OR title LIKE '%アイソレート%')";
+    whereClause = "WHERE title LIKE '%WPI%' OR title LIKE '%アイソレート%'";
   } else if (type === 'other') {
     whereClause = "WHERE title NOT LIKE '%ホエイ%' AND title NOT LIKE '%WPI%' AND title NOT LIKE '%ソイ%' AND title NOT LIKE '%アイソレート%'";
   }
@@ -33,6 +31,18 @@ export async function GET(req: NextRequest) {
     orderClause = 'ORDER BY COALESCE(buyBoxPrice, buyBoxFallback) ASC';
   }
 
+  type ProductRow = {
+    asin: string;
+    title: string;
+    brand: string;
+    buyBoxPrice: number | null;
+    buyBoxFallback: number | null;
+    salesRank: number | null;
+    dropRate: number;
+    dropRatePrev: number;
+    imageUrl: string;
+  };
+
   const stmt = db.prepare(`
     SELECT asin, title, brand, buyBoxPrice, buyBoxFallback, salesRank, dropRate, dropRatePrev, imageUrl
     FROM products
@@ -41,8 +51,8 @@ export async function GET(req: NextRequest) {
     LIMIT ?
   `);
 
-  const results = stmt.all(limit).map((item, index) => {
-    const score = (item.dropRate * 2) + (10000 - (item.salesRank ?? 10000));
+  const results = (stmt.all(limit) as ProductRow[]).map((item, index) => {
+    const score = item.dropRate * 2 + (10000 - (item.salesRank ?? 10000));
     const rawPrice = item.buyBoxPrice ?? item.buyBoxFallback;
     const price = rawPrice ? Math.round(rawPrice / 100) : null;
     const dropDiff = item.dropRate - (item.dropRatePrev ?? 0);
