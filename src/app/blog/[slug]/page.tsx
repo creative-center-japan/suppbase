@@ -9,7 +9,7 @@ interface ArticlePageProps {
   };
 }
 
-export default async function ArticlePage({ params }: ArticlePageProps) {
+export default function ArticlePage({ params }: ArticlePageProps) {
   const filePath = path.join(process.cwd(), "articles", `${params.slug}.md`);
   const fileContent = fs.readFileSync(filePath, "utf-8");
   const { data, content } = matter(fileContent);
