@@ -3,11 +3,22 @@ import path from "path";
 import matter from "gray-matter";
 import Markdown from "react-markdown";
 
-export default function ArticlePage({
-  params,
-}: {
-  params: { slug: string };
-}) {
+type PageProps = {
+  params: {
+    slug: string;
+  };
+};
+
+export async function generateStaticParams() {
+  const articlesDir = path.join(process.cwd(), "articles");
+  const filenames = fs.readdirSync(articlesDir);
+
+  return filenames.map((name) => ({
+    slug: name.replace(/\\.md$/, ""),
+  }));
+}
+
+export default function ArticlePage({ params }: PageProps) {
   const filePath = path.join(process.cwd(), "articles", `${params.slug}.md`);
   const fileContent = fs.readFileSync(filePath, "utf-8");
   const { data, content } = matter(fileContent);
