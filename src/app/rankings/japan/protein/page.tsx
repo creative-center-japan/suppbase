@@ -11,7 +11,20 @@ const tabs = [
   { id: 'isolate', label: 'アイソレート（WPI）' }
 ];
 
-const RankingSection = ({ items }: { items: any[] }) => {
+type ProductItem = {
+  rank: number;
+  title: string;
+  asin: string;
+  brand: string;
+  price: number | null;
+  imageUrl: string;
+  dropRate: number;
+  dropRateDiff: number;
+  score: number;
+  affiliateUrl: string;
+};
+
+const RankingSection = ({ items }: { items: ProductItem[] }) => {
   if (!items.length) return <p className="text-center text-gray-400">ランキング読み込み中...</p>;
 
   return (
@@ -89,9 +102,9 @@ const RankingSection = ({ items }: { items: any[] }) => {
 
 export default function ProteinRankingPage() {
   const [activeTab, setActiveTab] = useState('whey');
-  const [wheyItems, setWheyItems] = useState<any[]>([]);
-  const [soyItems, setSoyItems] = useState<any[]>([]);
-  const [isolateItems, setIsolateItems] = useState<any[]>([]);
+  const [wheyItems, setWheyItems] = useState<ProductItem[]>([]);
+  const [soyItems, setSoyItems] = useState<ProductItem[]>([]);
+  const [isolateItems, setIsolateItems] = useState<ProductItem[]>([]);
 
   useEffect(() => {
     fetch('/api/ranking?type=whey&sort=score')
