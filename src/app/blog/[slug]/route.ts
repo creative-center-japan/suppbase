@@ -5,7 +5,7 @@ import matter from 'gray-matter';
 
 export async function GET(
   _req: NextRequest,
-  context: { params: Record<string, string> }
+  context: { params?: Record<string, string> }
 ) {
   const slug = context.params?.slug;
 
