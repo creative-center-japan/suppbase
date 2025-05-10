@@ -3,13 +3,11 @@ import path from 'path';
 import fs from 'fs';
 import matter from 'gray-matter';
 
-export async function GET(
-  req: NextRequest,
-  context: { params?: Record<string, string | string[]> }
-) {
+export async function GET(req: NextRequest, context: any) {
   try {
     const slug = context.params?.slug;
-    if (typeof slug !== 'string') {
+
+    if (!slug || typeof slug !== 'string') {
       return NextResponse.json({ error: 'Invalid slug' }, { status: 400 });
     }
 
@@ -23,7 +21,6 @@ export async function GET(
 
     return NextResponse.json({ title: data.title, date: data.date, content });
   } catch (err) {
-    console.error(err);
     return NextResponse.json({ error: 'Error reading article' }, { status: 500 });
   }
 }
