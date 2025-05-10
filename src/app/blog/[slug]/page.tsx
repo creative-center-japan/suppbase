@@ -1,26 +1,20 @@
-import fs from "fs/promises";
+import fs from "fs";
 import path from "path";
 import matter from "gray-matter";
 import Markdown from "react-markdown";
 
-type PageProps = {
-  params: {
-    slug: string;
-  };
-};
-
-export async function generateStaticParams() {
+export function generateStaticParams() {
   const articlesDir = path.join(process.cwd(), "articles");
-  const filenames = await fs.readdir(articlesDir);
+  const filenames = fs.readdirSync(articlesDir);
 
   return filenames.map((name) => ({
     slug: name.replace(/\\.md$/, ""),
   }));
 }
 
-export default async function ArticlePage({ params }: PageProps) {
+export default function ArticlePage({ params }: { params: any }) {
   const filePath = path.join(process.cwd(), "articles", `${params.slug}.md`);
-  const fileContent = await fs.readFile(filePath, "utf-8");
+  const fileContent = fs.readFileSync(filePath, "utf-8");
   const { data, content } = matter(fileContent);
 
   return (
@@ -35,4 +29,3 @@ export default async function ArticlePage({ params }: PageProps) {
     </main>
   );
 }
-
