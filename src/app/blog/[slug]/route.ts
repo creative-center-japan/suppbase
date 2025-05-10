@@ -1,5 +1,3 @@
-// src/app/blog/[slug]/route.ts
-
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
 import fs from 'fs';
@@ -20,7 +18,7 @@ export async function GET(
     const { data, content } = matter(fileContent);
 
     return NextResponse.json({ title: data.title, date: data.date, content });
-  } catch (err) {
+  } catch (_err) {
     return NextResponse.json({ error: 'Error reading article' }, { status: 500 });
   }
 }
