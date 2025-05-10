@@ -45,7 +45,6 @@ export default function HomePage() {
 
   return (
     <main className="relative overflow-hidden h-[70vh]">
-      {/* 背景動画 */}
       {videos.map((src, index) => (
         <video
           key={src}
@@ -63,10 +62,8 @@ export default function HomePage() {
         />
       ))}
 
-      {/* グラデーション境界ライン */}
       <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-t from-white to-transparent z-10" />
 
-      {/* コンテンツ（ロゴ・テキスト・ボタン） */}
       <div className="relative z-20 flex flex-col items-center justify-center h-full text-white text-center px-4 bg-black/30 backdrop-blur-sm">
         <h1 className="text-5xl font-extrabold drop-shadow-lg mb-4">SuppBase</h1>
         <p className="text-xl drop-shadow-md mb-8">サプリとデータで、ちょっと未来の自分へ。</p>
