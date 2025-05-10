@@ -1,26 +1,20 @@
-import fs from "fs";
+import { readFile, readdir } from "fs/promises";
 import path from "path";
 import matter from "gray-matter";
 import Markdown from "react-markdown";
 
-type PageProps = {
-  params: {
-    slug: string;
-  };
-};
-
-export function generateStaticParams() {
+export async function generateStaticParams() {
   const articlesDir = path.join(process.cwd(), "articles");
-  const filenames = fs.readdirSync(articlesDir);
+  const filenames = await readdir(articlesDir);
 
   return filenames.map((name) => ({
-    slug: name.replace(/\.md$/, ""),
+    slug: name.replace(/\\.md$/, ""),
   }));
 }
 
-export default function ArticlePage({ params }: PageProps) {
+export default async function ArticlePage({ params }: { params: { slug: string } }) {
   const filePath = path.join(process.cwd(), "articles", `${params.slug}.md`);
-  const fileContent = fs.readFileSync(filePath, "utf-8");
+  const fileContent = await readFile(filePath, "utf-8");
   const { data, content } = matter(fileContent);
 
   return (
