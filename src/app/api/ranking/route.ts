@@ -18,8 +18,21 @@ export async function GET(req: NextRequest) {
     whereClause = "WHERE title LIKE '%ソイ%'";
   } else if (type === 'isolate') {
     whereClause = "WHERE title LIKE '%WPI%' OR title LIKE '%アイソレート%'";
+  } else if (type === 'bcaa') {
+    whereClause = "WHERE title LIKE '%BCAA%' OR title LIKE '%bcaa%'";
+  } else if (type === 'eaa') {
+    whereClause = "WHERE title LIKE '%EAA%' OR title LIKE '%eaa%'";
   } else if (type === 'other') {
-    whereClause = "WHERE title NOT LIKE '%ホエイ%' AND title NOT LIKE '%WPI%' AND title NOT LIKE '%ソイ%' AND title NOT LIKE '%アイソレート%'";
+    whereClause = `
+      WHERE title NOT LIKE '%ホエイ%'
+      AND title NOT LIKE '%WPI%'
+      AND title NOT LIKE '%ソイ%'
+      AND title NOT LIKE '%アイソレート%'
+      AND title NOT LIKE '%BCAA%'
+      AND title NOT LIKE '%EAA%'
+      AND title NOT LIKE '%bcaa%'
+      AND title NOT LIKE '%eaa%'
+    `;
   }
 
   let orderClause = 'ORDER BY dropRate DESC';
