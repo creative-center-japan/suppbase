@@ -2,10 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import Database from 'better-sqlite3';
 import path from 'path';
 
-const DB_PATH = path.resolve(process.cwd(), 'mydata.db');
+const DB_PATH = path.resolve(process.cwd(), 'public', 'mydata.db'); // ← 修正箇所
 
 export async function GET(req: NextRequest) {
-  
   try {
     const db = new Database(DB_PATH);
 
@@ -90,7 +89,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(results);
 
   } catch (err) {
-    console.error("❌ API error:", err); // ← Vercel logs で見える
+    console.error("❌ API error:", err);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
