@@ -17,7 +17,7 @@ export default function HomePage() {
   const videoRefs = useRef<Array<HTMLVideoElement | null>>([]);
 
   useEffect(() => {
-    if (cycleCount >= 1 && current === videos.length - 1) return;
+    if (cycleCount >= 1) return;
 
     const interval = setInterval(() => {
       setCurrent((prev) => {
@@ -28,7 +28,7 @@ export default function HomePage() {
     }, 8000);
 
     return () => clearInterval(interval);
-  }, [current, cycleCount]);
+  }, [cycleCount]);
 
   useEffect(() => {
     const video = videoRefs.current[current];
