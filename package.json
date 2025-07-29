@@ -10,11 +10,12 @@
   },
   "dependencies": {
     "@tailwindcss/typography": "^0.5.16",
+    "@types/pg": "^8.15.5",
     "better-sqlite3": "^11.9.1",
     "gray-matter": "^4.0.3",
     "marked": "^15.0.11",
     "next": "15.3.1",
-    "pg": "^8.15.6",
+    "pg": "^8.16.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0"
