@@ -6,6 +6,19 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
+// DB取得結果の型を明確に定義
+type ProductRow = {
+  asin: string;
+  title: string;
+  brand: string;
+  buyboxprice: number | null;
+  buyboxfallback: number | null;
+  salesrank: number | null;
+  droprate: number;
+  droprateprev: number | null;
+  imageurl: string;
+};
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -56,10 +69,10 @@ export async function GET(req: NextRequest) {
       ${orderClause}
       LIMIT $1
     `;
-    const { rows } = await pool.query(query, [limit]);
+    const { rows } = await pool.query<ProductRow>(query, [limit]);
 
-    // 整形
-    const results = rows.map((item: any, index: number) => {
+    // 整形（型指定済）
+    const results = rows.map((item: ProductRow, index: number) => {
       const score = item.droprate * 2 + (10000 - (item.salesrank ?? 10000));
       const rawPrice = item.buyboxprice ?? item.buyboxfallback;
       const price = rawPrice ? Math.round(rawPrice / 100) : null;
