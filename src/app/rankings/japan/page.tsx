@@ -19,12 +19,12 @@ export default function JapanRankingOverview() {
           <li key={item.href}>
             <Link
               href={item.href}
-              className="block p-7 h-28 border border-gray-100 rounded-2xl bg-white
-                         text-lg font-semibold text-gray-800 shadow-sm
-                         hover:border-green-300 hover:bg-green-50/50
-                         transition-all duration-200"
+              className="flex items-center justify-center p-8 h-28 rounded-2xl
+                         border border-gray-100 bg-gradient-to-br from-white to-gray-50
+                         text-lg font-semibold text-gray-800 shadow-md
+                         hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200"
             >
-              <span className="inline-block">{item.label}</span>
+              {item.label}
             </Link>
           </li>
         ))}
