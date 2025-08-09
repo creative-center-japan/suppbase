@@ -13,14 +13,18 @@ export default function JapanRankingOverview() {
   return (
     <main className="max-w-4xl mx-auto px-4 py-10">
       <h1 className="text-3xl font-bold text-center mb-8">ジャンル別ランキング</h1>
+
       <ul className="grid grid-cols-1 sm:grid-cols-2 gap-6">
         {genres.map((item) => (
           <li key={item.href}>
             <Link
               href={item.href}
-              className="flex items-center justify-center p-8 h-28 border border-gray-200 rounded-xl hover:bg-green-50 text-lg font-semibold text-gray-800 shadow-md transition transform hover:-translate-y-1 hover:shadow-lg"
+              className="block p-7 h-28 border border-gray-100 rounded-2xl bg-white
+                         text-lg font-semibold text-gray-800 shadow-sm
+                         hover:border-green-300 hover:bg-green-50/50
+                         transition-all duration-200"
             >
-              {item.label}
+              <span className="inline-block">{item.label}</span>
             </Link>
           </li>
         ))}
