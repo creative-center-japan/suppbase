@@ -1,11 +1,14 @@
-# import_to_neonDB.py  ← Supabase用に置き換え
-
+# import_to_Supabase.py
 import os
 import json
 from typing import Any, Dict, List, Tuple
 
 import psycopg2
 from psycopg2.extras import execute_values
+
+# 追加: IPv4 強制用
+import socket
+import urllib.parse as up
 
 # 取り込むJSONファイル（リポジトリ直下にある想定）
 INPUT_FILES = [
@@ -61,9 +64,28 @@ def to_row(p: Dict[str, Any]) -> Tuple:
         imageUrl,
     )
 
+def connect_ipv4_only(database_url: str):
+    """
+    方式A: DSN内のホスト名をIPv4に置換して接続。
+    IPv4が解決できない/失敗した場合は、最後に通常接続へフォールバック。
+    """
+    try:
+        u = up.urlparse(database_url)
+        # SupabaseホストのIPv4解決
+        ipv4_list = [ai[4][0] for ai in socket.getaddrinfo(u.hostname, None, socket.AF_INET)]
+        ipv4 = ipv4_list[0]
+        print(f"[i] Resolved IPv4 for {u.hostname}: {ipv4}")
+        # DSNのホスト名をIPv4に置換（sslmode等はそのまま残る）
+        dsn_ipv4 = database_url.replace(u.hostname, ipv4, 1)
+        return psycopg2.connect(dsn_ipv4)
+    except Exception as e:
+        print(f"[!] IPv4強制接続に失敗: {e}")
+        print("[i] 通常の接続方法でリトライします…")
+        return psycopg2.connect(database_url)
+
 def main():
     # --- 接続文字列を環境変数から取得 ---
-    # 例: postgresql://postgres:SuppBase.net051Da0%21Creative-J2025%23@db.xxxxxx.supabase.co:5432/postgres
+    # 例: postgresql://postgres:*****@db.xxxxxx.supabase.co:5432/postgres?sslmode=require
     DATABASE_URL = os.environ.get("DATABASE_URL")
     if not DATABASE_URL:
         raise RuntimeError("環境変数 DATABASE_URL が設定されていません。")
@@ -77,8 +99,8 @@ def main():
         print("データが空のため、処理を終了します。")
         return
 
-    # --- DB接続 ---
-    conn = psycopg2.connect(DATABASE_URL)
+    # --- DB接続（IPv4強制） ---
+    conn = connect_ipv4_only(DATABASE_URL)
     cur = conn.cursor()
 
     # Postgresは未クオート識別子を小文字化するので、テーブル/カラム名は小文字で指定
