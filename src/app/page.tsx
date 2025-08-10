@@ -12,48 +12,41 @@ const videos = [
   '/videos/protein.mp4',
 ];
 
-// 次クリップを早めに再生してからフェード（ms）
-const PREPARE_MS = 300;
-// メタデータ未取得時の保険長さ（ms）
-const MIN_DURATION = 3000;
+const PREPARE_MS = 300;    // 次クリップを少し早くプリロール
+const MIN_DURATION = 3000; // 長さ不明時の保険(ms)
 
 export default function HomePage() {
   const [current, setCurrent] = useState(0);
   const [durations, setDurations] = useState<number[]>(
     Array(videos.length).fill(NaN)
   );
-  const [cycleCount, setCycleCount] = useState(0);
 
   const videoRefs = useRef<Array<HTMLVideoElement | null>>([]);
   const timerRef = useRef<number | null>(null);
 
-  // すべて事前ロード
+  // 事前ロード
   useEffect(() => {
     videoRefs.current.forEach((v) => {
       if (v) {
         v.preload = 'auto';
-        try {
-          v.load();
-        } catch {
-          /* noop */
-        }
+        try { v.load(); } catch {}
       }
     });
   }, []);
 
-  // メタデータから実長を記録
+  // 実長を保存
   const handleLoadedMetadata = (i: number) => {
     const v = videoRefs.current[i];
     if (v && !Number.isNaN(v.duration)) {
       setDurations((d) => {
         const cp = d.slice();
-        cp[i] = v.duration * 1000; // ms
+        cp[i] = v.duration * 1000;
         return cp;
       });
     }
   };
 
-  // 現在の動画を再生し、次をプリロールしてからインデックス切替
+  // 再生＆プリロール→フェード
   useEffect(() => {
     const curEl = videoRefs.current[current];
     if (!curEl) return;
@@ -75,18 +68,13 @@ export default function HomePage() {
       timerRef.current = null;
     }
 
-    // 切替直前に次を見えない状態で再生開始（デコードを走らせる）
     timerRef.current = window.setTimeout(() => {
       if (nextEl) {
         nextEl.currentTime = 0;
         nextEl.muted = true;
         nextEl.play().catch(() => {});
       }
-      // ほんの少し待ってからフェード切替
-      window.setTimeout(() => {
-        setCurrent(next);
-        if (next === 0) setCycleCount((c) => c + 1);
-      }, 50);
+      window.setTimeout(() => setCurrent(next), 50);
     }, fireAt);
 
     return () => {
@@ -94,7 +82,7 @@ export default function HomePage() {
     };
   }, [current, durations]);
 
-  // ref コールバック（値を返さない！）
+  // ref コールバック（値は返さない）
   const setVideoRef = (i: number) => (el: HTMLVideoElement | null) => {
     videoRefs.current[i] = el;
   };
@@ -117,10 +105,8 @@ export default function HomePage() {
         />
       ))}
 
-      {/* 下部の黒→透明グラデ */}
       <div className="absolute bottom-0 left-0 w-full h-16 bg-gradient-to-t from-black to-transparent z-10" />
 
-      {/* 中央オーバーレイ（やや濃い目） */}
       <div className="relative z-20 flex flex-col items-center justify-center h-full text-white text-center px-4 bg-black/40 backdrop-blur-sm">
         <h1 className="text-5xl font-extrabold drop-shadow-lg mb-4">SuppBase</h1>
         <p className="text-xl drop-shadow-md mb-8">
