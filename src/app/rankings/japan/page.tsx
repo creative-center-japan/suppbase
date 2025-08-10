@@ -11,8 +11,8 @@ const genres = [
 
 export default function JapanRankingOverview() {
   return (
-    <main className="max-w-4xl mx-auto px-4 py-10 bg-black text-white min-h-screen">
-      <h1 className="text-3xl font-bold text-center mb-8">
+    <main className="max-w-4xl mx-auto px-4 py-10 bg-white min-h-screen">
+      <h1 className="text-3xl font-bold text-center mb-8 text-gray-900">
         ジャンル別ランキング
       </h1>
 
@@ -21,10 +21,10 @@ export default function JapanRankingOverview() {
           <li key={item.href}>
             <Link
               href={item.href}
-              className="flex items-center justify-center p-8 h-28 rounded-2xl
-                         bg-gray-900 text-lg font-semibold text-green-400 shadow-md
-                         hover:bg-green-500 hover:text-white hover:shadow-lg
-                         hover:-translate-y-0.5 transition-all duration-200"
+              className="flex items-center justify-center p-8 h-28 rounded-lg
+                         border border-gray-200 bg-white text-lg font-medium text-gray-900
+                         shadow-sm hover:bg-green-600 hover:text-white hover:shadow-lg
+                         transition-all duration-200"
             >
               {item.label}
             </Link>

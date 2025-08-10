@@ -1,10 +1,6 @@
-// healthy-site\src\app\page.tsx
+// healthy-site/src/app/page.tsx
 
 'use client';
-
-
-
-
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -14,63 +10,102 @@ const videos = [
   "/videos/jog.mp4",
   "/videos/meal.mp4",
   "/videos/capsule.mp4",
-  "/videos/protein.mp4"
+  "/videos/protein.mp4",
 ];
+
+const PREPARE_MS = 300;   // 次の動画をこのミリ秒だけ早く再生開始してからフェード
+const MIN_DURATION = 3000; // メタデータ未取得の保険（3秒）
 
 export default function HomePage() {
   const [current, setCurrent] = useState(0);
-  const [cycleCount, setCycleCount] = useState(0);
+  const [durations, setDurations] = useState<number[]>(Array(videos.length).fill(NaN));
   const videoRefs = useRef<Array<HTMLVideoElement | null>>([]);
+  const timerRef = useRef<number | null>(null);
 
+  // すべてのvideoを事前ロード
   useEffect(() => {
-    if (cycleCount >= 1) return;
-
-    const interval = setInterval(() => {
-      setCurrent((prev) => {
-        const next = (prev + 1) % videos.length;
-        if (next === 0) setCycleCount((c) => c + 1);
-        return next;
-      });
-    }, 8000);
-
-    return () => clearInterval(interval);
-  }, [cycleCount]);
-
-  useEffect(() => {
-    const video = videoRefs.current[current];
-    if (video) {
-      video.currentTime = 0;
-      const playPromise = video.play();
-      if (playPromise !== undefined) {
-        playPromise.catch((e) => {
-          console.warn("Video play failed:", e.message);
-        });
+    videoRefs.current.forEach((v) => {
+      if (v) {
+        v.preload = "auto";
+        // すでにロード済みでもOK（明示ロード）
+        try { v.load(); } catch {}
       }
+    });
+  }, []);
+
+  // メタデータから実際の長さを記録
+  const handleLoadedMetadata = (i: number) => {
+    const v = videoRefs.current[i];
+    if (v && !Number.isNaN(v.duration)) {
+      setDurations((d) => {
+        const cp = d.slice();
+        cp[i] = v.duration * 1000; // ms
+        return cp;
+      });
     }
-  }, [current]);
+  };
+
+  // 現在の動画を再生し、次の動画を早めにプリロール→フェード
+  useEffect(() => {
+    const curEl = videoRefs.current[current];
+    if (!curEl) return;
+
+    // 現在の動画を頭出し＆再生
+    curEl.currentTime = 0;
+    curEl.muted = true;
+    curEl.play().catch(() => {});
+
+    // 次の動画の準備
+    const next = (current + 1) % videos.length;
+    const nextEl = videoRefs.current[next];
+
+    const durationMs = Number.isNaN(durations[current]) ? MIN_DURATION : durations[current];
+    const fireAt = Math.max(0, durationMs - PREPARE_MS);
+
+    // 既存タイマーをクリア
+    if (timerRef.current) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+
+    // 切替直前に次の動画を再生開始（見えない状態で再生→デコードを走らせる）
+    timerRef.current = window.setTimeout(() => {
+      if (nextEl) {
+        nextEl.currentTime = 0;
+        nextEl.muted = true;
+        nextEl.play().catch(() => {});
+      }
+      // ほんの少し待ってからインデックス切替（フェードはCSSで）
+      window.setTimeout(() => setCurrent(next), 50);
+    }, fireAt);
+
+    return () => {
+      if (timerRef.current) window.clearTimeout(timerRef.current);
+    };
+  }, [current, durations]);
 
   return (
-    <main className="relative overflow-hidden h-[70vh]">
+    <main className="relative overflow-hidden h-[70vh] bg-black">
       {videos.map((src, index) => (
         <video
           key={src}
-          ref={(el: HTMLVideoElement | null) => {
-            videoRefs.current[index] = el;
-          }}
+          ref={(el) => (videoRefs.current[index] = el)}
           src={src}
-          autoPlay
           muted
           playsInline
+          preload="auto"
+          // 1つずつ再生（ループは手動で制御）
           loop={false}
-          className={`absolute top-0 left-0 w-full h-full object-cover transition-opacity duration-1000 z-0 ${
+          onLoadedMetadata={() => handleLoadedMetadata(index)}
+          className={`absolute top-0 left-0 w-full h-full object-cover transition-opacity duration-500 z-0 ${
             current === index ? "opacity-100" : "opacity-0"
           }`}
         />
       ))}
 
-      <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-t from-white to-transparent z-10" />
+      <div className="absolute bottom-0 left-0 w-full h-16 bg-gradient-to-t from-black to-transparent z-10" />
 
-      <div className="relative z-20 flex flex-col items-center justify-center h-full text-white text-center px-4 bg-black/30 backdrop-blur-sm">
+      <div className="relative z-20 flex flex-col items-center justify-center h-full text-white text-center px-4 bg-black/40 backdrop-blur-sm">
         <h1 className="text-5xl font-extrabold drop-shadow-lg mb-4">SuppBase</h1>
         <p className="text-xl drop-shadow-md mb-8">サプリとデータで、ちょっと未来の自分へ。</p>
 
@@ -92,4 +127,3 @@ export default function HomePage() {
     </main>
   );
 }
-
