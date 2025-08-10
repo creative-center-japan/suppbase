@@ -1,5 +1,4 @@
-// healthy-site\src\app\blog\[slug]\page.tsx
-
+// src/app/blog/[slug]/page.tsx
 export const dynamic = "force-static";
 
 import fs from "fs";
@@ -8,19 +7,21 @@ import matter from "gray-matter";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 
-type Props = { params: { slug: string } };
+type PageProps = {
+  params: Promise<{ slug: string }>; // ★ Next.js 15: params は Promise
+};
 
 const articlesDir = path.join(process.cwd(), "articles");
 
-export function generateStaticParams() {
+export async function generateStaticParams() {
   const files = fs.existsSync(articlesDir) ? fs.readdirSync(articlesDir) : [];
   return files
     .filter((f) => f.endsWith(".md"))
     .map((f) => ({ slug: f.replace(/\.md$/, "") }));
 }
 
-export default function ArticlePage({ params }: Props) {
-  const slug = params?.slug;
+export default async function ArticlePage({ params }: PageProps) {
+  const { slug } = await params; // ★ ここで await
   if (!slug) notFound();
 
   const filePath = path.join(articlesDir, `${slug}.md`);
@@ -38,7 +39,7 @@ export default function ArticlePage({ params }: Props) {
       <p className="text-sm text-gray-500">
         {data.date ? new Date(data.date).toLocaleDateString() : ""}
       </p>
-      {/* とりあえず生描画。あとで remark に置き換え可 */}
+      {/* とりあえず素描画。必要なら remark に差し替え */}
       <article className="mt-6 whitespace-pre-wrap">{content}</article>
     </main>
   );

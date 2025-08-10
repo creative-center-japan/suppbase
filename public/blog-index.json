@@ -1,0 +1,37 @@
+[
+  {
+    "slug": "california-gym-culture",
+    "title": "ジムの総本山 カリフォルニアでのジム事情",
+    "date": "2025-05-06",
+    "summary": "フィットネス文化の最先端、カリフォルニアのジム事情を徹底解説！",
+    "url": "https://example.com/blog/california-gym-culture"
+  },
+  {
+    "slug": "ems-effectiveness-american-debate",
+    "title": "EMSって効果あるの？アメリカでの賛否を徹底解説",
+    "date": "2025-05-06",
+    "summary": "EMS（筋肉電気刺激）の効果についてアメリカの専門家やユーザーの賛否を交えて解説。",
+    "url": "https://example.com/blog/ems-effectiveness-american-debate"
+  },
+  {
+    "slug": "fasting-benefits-us",
+    "title": "ファスティングって効果について アメリカでの賛否を徹底調査",
+    "date": "2025-05-06",
+    "summary": "ファスティング（断食）の効果に関するアメリカの専門家・利用者の評価をまとめました。",
+    "url": "https://example.com/blog/fasting-benefits-us"
+  },
+  {
+    "slug": "fasting-effectiveness-uk",
+    "title": "イギリスでの常識？？断食って効果あるのか？",
+    "date": "2025-05-06",
+    "summary": "イギリスで注目されている断食（ファスティング）の効果や現地の反応を調査！",
+    "url": "https://example.com/blog/fasting-effectiveness-uk"
+  },
+  {
+    "slug": "supplements-for-beginners",
+    "title": "プロテインは朝？夜？初心者向けの時間帯ガイド",
+    "date": "2025-05-06",
+    "summary": "朝プロテインと夜プロテイン、どっちが効果的？初心者向けのシンプル解説。",
+    "url": "https://example.com/blog/supplements-for-beginners"
+  }
+]

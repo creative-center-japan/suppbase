@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "gen:blog": "ts-node --transpile-only scripts/generate-blog-artifacts.ts"
+    "gen:blog": "tsx scripts/generate-blog-artifacts.ts"
   },
   "dependencies": {
     "@tailwindcss/typography": "^0.5.16",
@@ -33,6 +33,7 @@
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.17",
     "ts-node": "^10.9.2",
+    "tsx": "^4.20.3",
     "typescript": "^5"
   }
 }
