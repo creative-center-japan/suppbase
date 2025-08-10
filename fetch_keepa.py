@@ -1,10 +1,14 @@
+import os
 import requests
 import json
 import time
 
-API_KEY = "aushlc7f0h78jgeaqo6b904f9ggsickj3854obk1edfus9i82nf2takfqq5qgvpe"
+API_KEY = os.environ.get("KEEPA_API_KEY", "")
 
 def fetch_filtered_deals():
+    if not API_KEY:
+        raise RuntimeError("環境変数 KEEPA_API_KEY が未設定です。")
+
     all_asins = set()
     page = 0
 
@@ -18,7 +22,7 @@ def fetch_filtered_deals():
                 10504306051, 24310670051, 10504317051, 24555189051, 10504304051,
                 6637456051, 16402319051, 10504302051, 10504294051
             ],
-            "priceTypes": 3,  # Amazon + 出品者
+            "priceTypes": 3,
             "sortType": 4,
             "filterErotic": True,
             "isRangeEnabled": True,
@@ -34,35 +38,23 @@ def fetch_filtered_deals():
             try:
                 data = res.json()
                 wait_ms = data.get("refillIn", 60000)
-                wait_sec = wait_ms / 1000
-                print(f"[!] 429 エラー: {wait_sec:.1f}秒待機します...")
-                time.sleep(wait_sec + 1)
-                continue  # 同じページでリトライ
-            except Exception:
-                print("[!] 429 だけど詳細不明なので60秒待機します")
-                time.sleep(60)
+                time.sleep(wait_ms / 1000 + 1)
                 continue
+            except Exception:
+                time.sleep(60); continue
 
         if res.status_code == 500:
-            print("[!] 500エラー：サーバ側の問題。30秒待機して再試行します...")
-            time.sleep(30)
-            continue
+            time.sleep(30); continue
 
         if res.status_code != 200:
             print(f"[!] Page {page} error: {res.status_code} - {res.text}")
             break
 
         data = res.json()
-        total_results = data.get("totalResults", "N/A")
-        if page == 0:
-            print(f"[✓] Total Results Found: {total_results}")
-
         deals = data.get("deals", {}).get("dr", [])
         if not deals:
             print(f"[!] Page {page} returned no results. Done.")
             break
-
-        print(f"[{page}] Retrieved: {len(deals)}")
 
         for deal in deals:
             asin = deal.get("asin")
