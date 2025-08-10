@@ -1,0 +1,53 @@
+name: Keepa → Supabase sync
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    # UTC 17:00 = JST 02:00 毎日
+    - cron: "0 17 * * *"
+
+jobs:
+  run-scrapers:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      # requirements.txt があればそれを優先
+      - name: Install dependencies
+        run: |
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          else
+            pip install requests python-dotenv supabase psycopg2-binary pandas
+          fi
+
+      # Keepa 取得 → Supabase 取込（リポジトリ直下にある想定）
+      - name: Run fetch_keepa.py
+        env:
+          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+        run: |
+          python fetch_keepa.py
+
+      - name: Run import_to_Supabase.py
+        env:
+          # どちらの方法でも動くように、必要そうな環境変数を全部渡しておく
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python import_to_Supabase.py
