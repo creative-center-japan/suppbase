@@ -119,6 +119,7 @@ export default function SupplementRankingPage() {
         setBcaaItems(Array.isArray(d1) ? d1 : []);
         setEaaItems(Array.isArray(d2) ? d2 : []);
       } catch (e) {
+        console.error('supplements load failed:', e); // ← ここ追加
         setError('読み込みに失敗しました。時間をおいて再度お試しください。');
       } finally {
         setLoading({ bcaa: false, eaa: false });
