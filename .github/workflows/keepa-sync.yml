@@ -16,12 +16,11 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-            python-version: "3.11"
+          python-version: "3.11"
 
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
-          # 必要パッケージはここでインストール（足りなければ後で追加）
           pip install requests pandas python-dateutil psycopg2-binary supabase
 
       - name: Run fetch_keepa.py
@@ -29,6 +28,28 @@ jobs:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
         run: |
           python scripts/fetch_keepa.py
+
+      # ★ 追加：fetch の出力を import 側の想定名に揃える
+      - name: Normalize filenames
+        run: |
+          set -eux
+          ls -la || true
+          ls -la scripts || true
+
+          # protein_asins_deals_filtered.json → product_details.json に統一
+          if [ -f protein_asins_deals_filtered.json ]; then
+            mv protein_asins_deals_filtered.json product_details.json
+          elif [ -f scripts/protein_asins_deals_filtered.json ]; then
+            mv scripts/protein_asins_deals_filtered.json product_details.json
+          fi
+
+          # まだ存在しない補助ファイルは空配列で用意（スクリプトを通すため）
+          if [ ! -f supplement_product_details.json ]; then
+            echo "[]" > supplement_product_details.json
+          fi
+
+          echo "--- after normalize ---"
+          ls -la
 
       - name: Run import_to_Supabase.py
         env:
