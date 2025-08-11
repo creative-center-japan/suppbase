@@ -6,7 +6,7 @@ import Image from 'next/image';
 
 const tabs = [
   { id: 'bcaa', label: 'BCAA' },
-  { id: 'eaa', label: 'EAA' }
+  { id: 'eaa',  label: 'EAA'  }
 ];
 
 type ProductItem = {
@@ -15,15 +15,16 @@ type ProductItem = {
   asin: string;
   brand: string;
   price: number | null;
-  imageUrl: string;
-  dropRate: number;
-  dropRateDiff: number;
-  score: number;
+  imageUrl: string | null;
+  dropRate: number | null;
+  dropRateDiff: number | null;
+  score: number | null;
   affiliateUrl: string;
 };
 
-const RankingSection = ({ items }: { items: ProductItem[] }) => {
-  if (!items.length) return <p className="text-center text-gray-400">ランキング読み込み中...</p>;
+const RankingSection = ({ items, loading }: { items: ProductItem[]; loading: boolean }) => {
+  if (loading) return <p className="text-center text-gray-400">ランキング読み込み中...</p>;
+  if (!items.length) return <p className="text-center text-gray-400">データがありません</p>;
 
   return (
     <div className="space-y-4">
@@ -42,11 +43,11 @@ const RankingSection = ({ items }: { items: ProductItem[] }) => {
         >
           <Image
             src={item.imageUrl || '/no-image.png'}
-            alt={item.title}
+            alt={item.title || 'supplement'}
             width={96}
             height={96}
             className="object-contain rounded"
-            unoptimized={item.imageUrl?.includes('amazon') || false}
+            unoptimized={Boolean(item.imageUrl?.includes('amazon'))}
           />
           <div className="flex-1">
             <div className="flex items-center justify-between">
@@ -78,9 +79,9 @@ const RankingSection = ({ items }: { items: ProductItem[] }) => {
               </div>
             </div>
             <div className="mt-2 text-sm text-gray-700">
-              <p>価格: {item.price ? `${item.price.toLocaleString()}円` : '―'}</p>
+              <p>価格: {item.price != null ? `${item.price.toLocaleString()}円` : '―'}</p>
               <p>
-                ドロップ回数: {item.dropRate}
+                ドロップ回数: {item.dropRate ?? '―'}
                 {typeof item.dropRateDiff === 'number' &&
                   (item.dropRateDiff > 0
                     ? ` ↑${item.dropRateDiff}`
@@ -88,7 +89,7 @@ const RankingSection = ({ items }: { items: ProductItem[] }) => {
                     ? ` ↓${Math.abs(item.dropRateDiff)}`
                     : '')}
               </p>
-              <p>スコア: {typeof item.score === 'number' && item.score > 0 ? item.score : '―'}</p>
+              <p>スコア: {item.score && item.score > 0 ? item.score : '―'}</p>
             </div>
           </div>
         </div>
@@ -98,23 +99,38 @@ const RankingSection = ({ items }: { items: ProductItem[] }) => {
 };
 
 export default function SupplementRankingPage() {
-  const [activeTab, setActiveTab] = useState('bcaa');
+  const [activeTab, setActiveTab] = useState<'bcaa'|'eaa'>('bcaa');
   const [bcaaItems, setBcaaItems] = useState<ProductItem[]>([]);
-  const [eaaItems, setEaaItems] = useState<ProductItem[]>([]);
+  const [eaaItems,  setEaaItems]  = useState<ProductItem[]>([]);
+  const [loading,   setLoading]    = useState({ bcaa: true, eaa: true });
+  const [error,     setError]      = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/api/ranking?type=bcaa&sort=score')
-      .then(res => res.json())
-      .then(data => setBcaaItems(data));
-    fetch('/api/ranking?type=eaa&sort=score')
-      .then(res => res.json())
-      .then(data => setEaaItems(data));
+    const ac = new AbortController();
+
+    async function load() {
+      try {
+        setError(null);
+        const [r1, r2] = await Promise.all([
+          fetch('/api/supplements?type=bcaa&sort=score', { cache: 'no-store', signal: ac.signal }),
+          fetch('/api/supplements?type=eaa&sort=score',  { cache: 'no-store', signal: ac.signal }),
+        ]);
+        const [d1, d2] = await Promise.all([r1.json(), r2.json()]);
+        setBcaaItems(Array.isArray(d1) ? d1 : []);
+        setEaaItems(Array.isArray(d2) ? d2 : []);
+      } catch (e) {
+        setError('読み込みに失敗しました。時間をおいて再度お試しください。');
+      } finally {
+        setLoading({ bcaa: false, eaa: false });
+      }
+    }
+    load();
+
+    return () => ac.abort();
   }, []);
 
-  const getItems = () => {
-    if (activeTab === 'eaa') return eaaItems;
-    return bcaaItems;
-  };
+  const items = activeTab === 'eaa' ? eaaItems : bcaaItems;
+  const isLoading = activeTab === 'eaa' ? loading.eaa : loading.bcaa;
 
   return (
     <main className="max-w-4xl mx-auto px-4 py-8">
@@ -129,7 +145,7 @@ export default function SupplementRankingPage() {
         {tabs.map(tab => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => setActiveTab(tab.id as 'bcaa' | 'eaa')}
             className={`px-4 py-2 rounded-full border font-medium transition ${
               activeTab === tab.id
                 ? 'bg-green-600 text-white border-green-600'
@@ -141,7 +157,8 @@ export default function SupplementRankingPage() {
         ))}
       </div>
 
-      <RankingSection items={getItems()} />
+      {error && <p className="text-center text-red-500 mb-4">{error}</p>}
+      <RankingSection items={items} loading={isLoading} />
     </main>
   );
 }
