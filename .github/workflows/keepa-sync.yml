@@ -23,13 +23,21 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests pandas python-dateutil psycopg2-binary supabase
 
+      # --- Keepa 取得（プロテイン）
       - name: Run fetch_keepa.py
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
         run: |
           python scripts/fetch_keepa.py
 
-      # ★ 追加：ASINリストから product_details.json と supplement_product_details.json を生成
+      # --- Keepa 取得（サプリ）★追加
+      - name: Run fetch_keepa_supplement.py
+        env:
+          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+        run: |
+          python scripts/fetch_keepa_supplement.py
+
+      # --- ASINリスト→詳細JSON 生成（両方分）
       - name: Build product_details.json from ASIN list
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
@@ -37,6 +45,7 @@ jobs:
           python scripts/fetch_product_details.py
           ls -la
 
+      # --- Supabaseへ取り込み
       - name: Run import_to_Supabase.py
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
