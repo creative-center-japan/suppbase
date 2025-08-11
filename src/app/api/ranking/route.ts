@@ -1,16 +1,19 @@
-// healthy-site\src\app\api\ranking\route.ts
-
 export const runtime = 'nodejs';
 import { NextRequest, NextResponse } from 'next/server';
 import { Pool } from 'pg';
+
+// ★ 自己署名証明書の検証を無効化（即動かすための暫定対応）
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 let _pool: Pool | null = null;
 
 function normalizeDbUrl(raw: string) {
   const u = new URL(raw);
 
-  // sslmode=require を強制
-  if (!u.searchParams.has('sslmode')) u.searchParams.set('sslmode', 'require');
+  // sslmode=require を強制（または no-verify）
+  if (!u.searchParams.has('sslmode')) {
+    u.searchParams.set('sslmode', 'require');
+  }
   if (!u.searchParams.has('target_session_attrs')) {
     u.searchParams.set('target_session_attrs', 'read-write');
   }
@@ -29,12 +32,12 @@ function getPool() {
   const raw = process.env.DATABASE_URL!;
   const url = normalizeDbUrl(raw);
 
-  // デバッグ用ログ（Vercel Functions Logsで確認できる）
+  // デバッグ用ログ（Vercel Functions Logsで確認可能）
   console.log('DB host in use =>', url.host);
 
   _pool = new Pool({
     connectionString: url.toString(),
-    ssl: { rejectUnauthorized: false }, // サーバレスで安定
+    ssl: { rejectUnauthorized: false }, // サーバレス環境で安定させる
   });
   return _pool;
 }
@@ -84,6 +87,7 @@ export async function GET(req: NextRequest) {
       order = 'ORDER BY COALESCE(buyboxprice, buyboxfallback) ASC NULLS LAST';
     }
 
+    // 大文字混じりカラムも吸収
     const sql = `
       SELECT
         asin,
