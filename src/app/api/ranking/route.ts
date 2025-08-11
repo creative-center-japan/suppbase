@@ -1,3 +1,5 @@
+// healthy-site\src\app\api\ranking\route.ts
+
 export const runtime = 'nodejs';
 import { NextRequest, NextResponse } from 'next/server';
 import { Pool } from 'pg';
@@ -13,8 +15,7 @@ function normalizeDbUrl(raw: string) {
     u.searchParams.set('target_session_attrs', 'read-write');
   }
 
-  // <project>.pooler.supabase.com のように「地域なし」なら地域付きへ矯正
-  // 例: aws-0-ap-southeast-1.pooler.supabase.com
+  // 地域なし pooler を地域付きに矯正
   if (/^[a-z0-9-]+\.pooler\.supabase\.com$/i.test(u.host)) {
     u.host = 'aws-0-ap-southeast-1.pooler.supabase.com';
   }
@@ -28,7 +29,7 @@ function getPool() {
   const raw = process.env.DATABASE_URL!;
   const url = normalizeDbUrl(raw);
 
-  // デバッグ: Vercel Functions のログで確認できる
+  // デバッグ用ログ（Vercel Functions Logsで確認できる）
   console.log('DB host in use =>', url.host);
 
   _pool = new Pool({
@@ -38,7 +39,6 @@ function getPool() {
   return _pool;
 }
 
-// 型は小文字エイリアスに合わせる
 type ProductRow = {
   asin: string;
   title: string;
@@ -84,7 +84,6 @@ export async function GET(req: NextRequest) {
       order = 'ORDER BY COALESCE(buyboxprice, buyboxfallback) ASC NULLS LAST';
     }
 
-    // 大文字混じりも拾えるよう AS で小文字エイリアス
     const sql = `
       SELECT
         asin,
@@ -126,8 +125,9 @@ export async function GET(req: NextRequest) {
     });
 
     return NextResponse.json(results);
-  } catch (e: any) {
-    console.error('❌ /api/ranking error:', e?.message || e);
-    return NextResponse.json({ error: String(e?.message || e) }, { status: 500 });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('❌ /api/ranking error:', msg);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
