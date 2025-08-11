@@ -4,15 +4,18 @@ export const runtime = 'nodejs';
 import { NextRequest, NextResponse } from 'next/server';
 import { Pool } from 'pg';
 
-// Vercelの関数で接続数が増えないよう、Poolをグローバル再利用
+// 1) Pool はグローバル再利用 + SSL 明示
 let _pool: Pool | null = null;
 function getPool() {
   if (_pool) return _pool;
-  _pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  _pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }, // ★ これがポイント
+  });
   return _pool;
 }
 
-// DB取得結果の型
+// DB取得結果の型（小文字エイリアスに合わせる）
 type ProductRow = {
   asin: string;
   title: string;
@@ -30,7 +33,7 @@ export async function GET(req: NextRequest) {
     const searchParams = new URL(req.url).searchParams;
     const type = searchParams.get('type') ?? 'all';
     const sort = searchParams.get('sort') ?? 'drop';
-    const limit = Number(searchParams.get('limit') ?? '10');
+    const limit = Math.max(1, Math.min(100, Number(searchParams.get('limit') ?? '10')));
 
     // WHERE句
     let whereClause = '';
@@ -57,18 +60,31 @@ export async function GET(req: NextRequest) {
       `;
     }
 
-    // ORDER BY句（列名は小文字で統一）
+    // ORDER BY句（小文字エイリアスを使う）
     let orderClause = 'ORDER BY droprate DESC';
     if (sort === 'score') {
       orderClause = 'ORDER BY (COALESCE(droprate,0) * 2 + (10000 - COALESCE(salesrank, 10000))) DESC';
     } else if (sort === 'sales') {
-      orderClause = 'ORDER BY salesrank ASC';
+      orderClause = 'ORDER BY salesrank ASC NULLS LAST';
     } else if (sort === 'price') {
-      orderClause = 'ORDER BY COALESCE(buyboxprice, buyboxfallback) ASC';
+      orderClause = 'ORDER BY COALESCE(buyboxprice, buyboxfallback) ASC NULLS LAST';
     }
 
+    // 2) 大文字混じりカラムも拾えるように、ダブルクォート＋AS で小文字化
     const sql = `
-      SELECT asin, title, brand, buyboxprice, buyboxfallback, salesrank, droprate, droprateprev, imageurl
+      SELECT
+        asin,
+        title,
+        brand,
+        /* price 系 */
+        COALESCE("buyboxprice", "buyBoxPrice")         AS buyboxprice,
+        COALESCE("buyboxfallback", "buyBoxFallback")   AS buyboxfallback,
+        /* sales rank / drop rate */
+        COALESCE("salesrank", "salesRank")             AS salesrank,
+        COALESCE("droprate", "dropRate")               AS droprate,
+        COALESCE("droprateprev", "dropRatePrev")       AS droprateprev,
+        /* image */
+        COALESCE("imageurl", "imageUrl")               AS imageurl
       FROM products
       ${whereClause}
       ${orderClause}
@@ -83,6 +99,7 @@ export async function GET(req: NextRequest) {
       const rawPrice = item.buyboxprice ?? item.buyboxfallback;
       const price = rawPrice != null ? Math.round(rawPrice / 100) : null;
       const dropDiff = (item.droprate ?? 0) - (item.droprateprev ?? 0);
+
       return {
         rank: index + 1,
         asin: item.asin,
