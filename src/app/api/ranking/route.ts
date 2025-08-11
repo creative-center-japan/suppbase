@@ -1,21 +1,44 @@
-// healthy-site\src\app\api\ranking\route.ts
-
 export const runtime = 'nodejs';
 import { NextRequest, NextResponse } from 'next/server';
 import { Pool } from 'pg';
 
-// 1) Pool はグローバル再利用 + SSL 明示
 let _pool: Pool | null = null;
+
+function normalizeDbUrl(raw: string) {
+  const u = new URL(raw);
+
+  // sslmode=require を強制
+  if (!u.searchParams.has('sslmode')) u.searchParams.set('sslmode', 'require');
+  if (!u.searchParams.has('target_session_attrs')) {
+    u.searchParams.set('target_session_attrs', 'read-write');
+  }
+
+  // <project>.pooler.supabase.com のように「地域なし」なら地域付きへ矯正
+  // 例: aws-0-ap-southeast-1.pooler.supabase.com
+  if (/^[a-z0-9-]+\.pooler\.supabase\.com$/i.test(u.host)) {
+    u.host = 'aws-0-ap-southeast-1.pooler.supabase.com';
+  }
+
+  return u;
+}
+
 function getPool() {
   if (_pool) return _pool;
+
+  const raw = process.env.DATABASE_URL!;
+  const url = normalizeDbUrl(raw);
+
+  // デバッグ: Vercel Functions のログで確認できる
+  console.log('DB host in use =>', url.host);
+
   _pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }, // ★ これがポイント
+    connectionString: url.toString(),
+    ssl: { rejectUnauthorized: false }, // サーバレスで安定
   });
   return _pool;
 }
 
-// DB取得結果の型（小文字エイリアスに合わせる）
+// 型は小文字エイリアスに合わせる
 type ProductRow = {
   asin: string;
   title: string;
@@ -30,84 +53,72 @@ type ProductRow = {
 
 export async function GET(req: NextRequest) {
   try {
-    const searchParams = new URL(req.url).searchParams;
-    const type = searchParams.get('type') ?? 'all';
-    const sort = searchParams.get('sort') ?? 'drop';
-    const limit = Math.max(1, Math.min(100, Number(searchParams.get('limit') ?? '10')));
+    const sp = new URL(req.url).searchParams;
+    const type = sp.get('type') ?? 'all';
+    const sort = sp.get('sort') ?? 'drop';
+    const limit = Math.max(1, Math.min(100, Number(sp.get('limit') ?? '10')));
 
-    // WHERE句
-    let whereClause = '';
-    if (type === 'whey') {
-      whereClause = "WHERE title ILIKE '%ホエイ%' OR title ILIKE '%WPI%'";
-    } else if (type === 'soy') {
-      whereClause = "WHERE title ILIKE '%ソイ%'";
-    } else if (type === 'isolate') {
-      whereClause = "WHERE title ILIKE '%WPI%' OR title ILIKE '%アイソレート%'";
-    } else if (type === 'bcaa') {
-      whereClause = "WHERE title ILIKE '%BCAA%' OR title ILIKE '%bcaa%'";
-    } else if (type === 'eaa') {
-      whereClause = "WHERE title ILIKE '%EAA%' OR title ILIKE '%eaa%'";
-    } else if (type === 'other') {
-      whereClause = `
-        WHERE title NOT ILIKE '%ホエイ%'
-          AND title NOT ILIKE '%WPI%'
-          AND title NOT ILIKE '%ソイ%'
-          AND title NOT ILIKE '%アイソレート%'
-          AND title NOT ILIKE '%BCAA%'
-          AND title NOT ILIKE '%EAA%'
-          AND title NOT ILIKE '%bcaa%'
-          AND title NOT ILIKE '%eaa%'
-      `;
-    }
+    let where = '';
+    if (type === 'whey') where = "WHERE title ILIKE '%ホエイ%' OR title ILIKE '%WPI%'";
+    else if (type === 'soy') where = "WHERE title ILIKE '%ソイ%'";
+    else if (type === 'isolate') where = "WHERE title ILIKE '%WPI%' OR title ILIKE '%アイソレート%'";
+    else if (type === 'bcaa') where = "WHERE title ILIKE '%BCAA%' OR title ILIKE '%bcaa%'";
+    else if (type === 'eaa') where = "WHERE title ILIKE '%EAA%' OR title ILIKE '%eaa%'";
+    else if (type === 'other') where = `
+      WHERE title NOT ILIKE '%ホエイ%'
+        AND title NOT ILIKE '%WPI%'
+        AND title NOT ILIKE '%ソイ%'
+        AND title NOT ILIKE '%アイソレート%'
+        AND title NOT ILIKE '%BCAA%'
+        AND title NOT ILIKE '%EAA%'
+        AND title NOT ILIKE '%bcaa%'
+        AND title NOT ILIKE '%eaa%'
+    `;
 
-    // ORDER BY句（小文字エイリアスを使う）
-    let orderClause = 'ORDER BY droprate DESC';
+    let order = 'ORDER BY droprate DESC';
     if (sort === 'score') {
-      orderClause = 'ORDER BY (COALESCE(droprate,0) * 2 + (10000 - COALESCE(salesrank, 10000))) DESC';
+      order = 'ORDER BY (COALESCE(droprate,0)*2 + (10000-COALESCE(salesrank,10000))) DESC';
     } else if (sort === 'sales') {
-      orderClause = 'ORDER BY salesrank ASC NULLS LAST';
+      order = 'ORDER BY salesrank ASC NULLS LAST';
     } else if (sort === 'price') {
-      orderClause = 'ORDER BY COALESCE(buyboxprice, buyboxfallback) ASC NULLS LAST';
+      order = 'ORDER BY COALESCE(buyboxprice, buyboxfallback) ASC NULLS LAST';
     }
 
-    // 2) 大文字混じりカラムも拾えるように、ダブルクォート＋AS で小文字化
+    // 大文字混じりも拾えるよう AS で小文字エイリアス
     const sql = `
       SELECT
         asin,
         title,
         brand,
-        /* price 系 */
-        COALESCE("buyboxprice", "buyBoxPrice")         AS buyboxprice,
-        COALESCE("buyboxfallback", "buyBoxFallback")   AS buyboxfallback,
-        /* sales rank / drop rate */
-        COALESCE("salesrank", "salesRank")             AS salesrank,
-        COALESCE("droprate", "dropRate")               AS droprate,
-        COALESCE("droprateprev", "dropRatePrev")       AS droprateprev,
-        /* image */
-        COALESCE("imageurl", "imageUrl")               AS imageurl
+        COALESCE("buyboxprice","buyBoxPrice")             AS buyboxprice,
+        COALESCE("buyboxfallback","buyBoxFallback")       AS buyboxfallback,
+        COALESCE("salesrank","salesRank")                 AS salesrank,
+        COALESCE("droprate","dropRate")                   AS droprate,
+        COALESCE("droprateprev","dropRatePrev")           AS droprateprev,
+        COALESCE("imageurl","imageUrl")                   AS imageurl
       FROM products
-      ${whereClause}
-      ${orderClause}
+      ${where}
+      ${order}
       LIMIT $1
     `;
 
     const pool = getPool();
     const { rows } = await pool.query<ProductRow>(sql, [limit]);
 
-    const results = rows.map((item, index) => {
+    const results = rows.map((item, i) => {
       const score = (item.droprate ?? 0) * 2 + (10000 - (item.salesrank ?? 10000));
       const rawPrice = item.buyboxprice ?? item.buyboxfallback;
       const price = rawPrice != null ? Math.round(rawPrice / 100) : null;
-      const dropDiff = (item.droprate ?? 0) - (item.droprateprev ?? 0);
+      const diff = (item.droprate ?? 0) - (item.droprateprev ?? 0);
 
       return {
-        rank: index + 1,
+        rank: i + 1,
         asin: item.asin,
         title: item.title,
         brand: item.brand,
         price,
         dropRate: item.droprate,
-        dropRateDiff: dropDiff,
+        dropRateDiff: diff,
         score,
         imageUrl: item.imageurl,
         affiliateUrl: `https://www.amazon.co.jp/dp/${item.asin}?tag=yourtag-22`,
@@ -115,9 +126,8 @@ export async function GET(req: NextRequest) {
     });
 
     return NextResponse.json(results);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error('❌ /api/ranking error:', message);
-    return NextResponse.json({ error: message }, { status: 500 });
+  } catch (e: any) {
+    console.error('❌ /api/ranking error:', e?.message || e);
+    return NextResponse.json({ error: String(e?.message || e) }, { status: 500 });
   }
 }
