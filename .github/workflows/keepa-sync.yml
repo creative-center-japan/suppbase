@@ -6,9 +6,14 @@ on:
     # JST 02:00（UTC 17:00）
     - cron: "0 17 * * *"
 
+concurrency:
+  group: keepa-supabase-sync
+  cancel-in-progress: false
+
 jobs:
   run-scrapers:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -23,19 +28,35 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests pandas python-dateutil psycopg2-binary supabase
 
-      # --- プロテイン
+      # --- プロテイン（現状のfetch_keepa.pyをそのまま実行）
       - name: Run fetch_keepa.py
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
         run: |
           python scripts/fetch_keepa.py
 
-      # --- サプリメント ★追加
-      - name: Run fetch_keepa_supplement.py
+      # --- サプリメント（改良版：途中再開・制限付き）
+      - name: Run fetch_keepa_supplement.py (resume friendly)
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
         run: |
-          python scripts/fetch_keepa_supplement.py
+          # 置き換え済みの改良版を前提：
+          #   --max-pages / --max-minutes / --checkpoint / --min-rating / --min-reviews
+          python scripts/fetch_keepa_supplement.py \
+            --market jp \
+            --max-pages 300 \
+            --max-minutes 45 \
+            --checkpoint data/asins_supplements_jp.json \
+            --min-rating 3.8 \
+            --min-reviews 40
+
+      # --- チェックポイントを成果物に残す（途中で止まっても拾える）
+      - name: Upload supplement checkpoint
+        uses: actions/upload-artifact@v4
+        with:
+          name: asins-supplements-jp
+          path: data/asins_supplements_jp.json
+          if-no-files-found: ignore
 
       # --- 詳細データ作成
       - name: Build product_details.json from ASIN list
