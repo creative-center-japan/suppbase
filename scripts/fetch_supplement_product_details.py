@@ -1,154 +1,200 @@
 #!/usr/bin/env python3
-import os, json, time, random, argparse, pathlib, sys
-import requests
-from datetime import datetime, timedelta
+# -*- coding: utf-8 -*-
+"""
+Keepa supplement product details fetcher (resume-friendly)
+- 429 の refillIn に従って待機
+- --max-asins / --max-minutes / --batch-size で1回の実行を短く
+- --checkpoint で進捗(完了ASIN set)を保存 → 次回続きから
+- 既存の出力JSON（配列）があればマージ更新（同一ASINは上書き）
+"""
 
-# ■ APIキーは環境変数から
+import os
+import sys
+import json
+import time
+import math
+import argparse
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import List, Dict, Any, Optional
+
+import requests
+
 API_KEY = os.environ.get("KEEPA_API_KEY")
 if not API_KEY:
-    print("ERROR: 環境変数 KEEPA_API_KEY が未設定です。GitHub Actions の Secrets に設定してください。", file=sys.stderr)
+    print("ERROR: KEEPA_API_KEY is not set", file=sys.stderr)
     sys.exit(1)
 
-# ■ マーケット（今回はJPのみ。増やすなら dict を広げる）
-DOMAIN_ID = {"jp": 5}
+# Keepa domainId mapping
+DOMAIN_ID = {
+    "us": 1,
+    "uk": 3,
+    "de": 4,
+    "jp": 5,
+    "fr": 6,
+    "it": 8,
+    "es": 9,
+}
 
-# ■ 「サプリ（BCAA/EAA）」に寄せたJPカテゴリ
-JP_SUPP_CATS = [
-    3457080051, 169903011, 169904011, 169905011,
-    169909011, 169911011, 3457085051, 3457084051
-]
-
-def title_is_supplement(title: str) -> bool:
-    """BCAA/EAA などの簡易フィルタ。不要なら True 固定でもOK。"""
-    if not title:
-        return False
-    t = title.lower()
-    return any(k in t for k in ["bcaa", "eaa", "アミノ", "アミノ酸"])
-
-def save_checkpoint(path: pathlib.Path, asins_set: set):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(sorted(asins_set), f, ensure_ascii=False, indent=2)
-
-def load_checkpoint(path: pathlib.Path) -> set:
+# ---------- utils ----------
+def load_json(path: Path, default):
     if path.exists():
-        try:
-            return set(json.load(open(path, encoding="utf-8")))
-        except Exception:
-            return set()
-    return set()
+        with path.open("r", encoding="utf-8") as f:
+            return json.load(f)
+    return default
 
-def fetch_page(selection: dict, max_retry: int = 6) -> dict:
-    """429 は refillIn に従って待機。5xx は指数バックオフ。"""
-    url = "https://api.keepa.com/deal"
-    params = {"key": API_KEY, "selection": json.dumps(selection)}
-    retry = 0
+def save_json(path: Path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    with tmp.open("w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    tmp.replace(path)
+
+def request_keepa_products(domain_id: int, asins: List[str]) -> Dict[str, Any]:
+    """Keepa Product API。429はrefillInを待機して再試行。"""
+    url = "https://api.keepa.com/product"
+    params = {
+        "key": API_KEY,
+        "domain": domain_id,
+        "asin": ",".join(asins),
+        "buybox": 1,
+        "history": 0,   # 軽量化
+        "stats": 180,
+    }
     while True:
         r = requests.get(url, params=params, timeout=60)
-        # 429: レート制限 → refillIn(ms) + α 待つ
+        if r.status_code == 200:
+            return r.json()
         if r.status_code == 429:
             try:
-                refill_ms = r.json().get("refillIn", 60000)
+                wait_ms = r.json().get("refillIn", 60000)
             except Exception:
-                refill_ms = 60000
-            wait_s = refill_ms / 1000 + 1 + random.uniform(0, 1)
-            print(f"[429] wait {wait_s:.1f}s")
+                wait_ms = 60000
+            wait_s = wait_ms / 1000 + 1
+            print(f"[429] waiting {wait_s:.1f}s ...")
             time.sleep(wait_s)
             continue
-        # 一時エラー（Keepa は 500 が出ることあり）
-        if r.status_code >= 500:
-            if retry >= max_retry:
-                raise RuntimeError(f"Keepa 5xx {r.status_code}")
-            backoff = (2 ** retry) + random.uniform(0, 0.5)
-            print(f"[{r.status_code}] retry in {backoff:.1f}s (#{retry+1})")
-            time.sleep(backoff)
-            retry += 1
+        if 500 <= r.status_code < 600:
+            wait_s = 3.0
+            print(f"[{r.status_code}] server error, sleep {wait_s}s ...")
+            time.sleep(wait_s)
             continue
-        # その他エラー
-        if r.status_code != 200:
-            raise RuntimeError(f"HTTP {r.status_code}: {r.text[:200]}")
-        return r.json()
+        raise RuntimeError(f"Keepa HTTP {r.status_code}: {r.text[:200]}")
 
+def pick_first_image(product: Dict[str, Any]) -> Optional[str]:
+    imgs = product.get("imagesCSV") or ""
+    if imgs:
+        first = imgs.split(",")[0].strip()
+        if first:
+            return f"https://keepa.com/!productImage?i={first}"
+    return None
+
+def map_product_row(p: Dict[str, Any]) -> Dict[str, Any]:
+    """既存スキーマに合わせて整形。"""
+    return {
+        "asin": p.get("asin"),
+        "title": p.get("title") or p.get("titleLower") or "",
+        "brand": p.get("brand") or None,
+        "buyboxprice": p.get("buyBoxPrice"),            # cents
+        "buyboxfallback": p.get("buyBoxShipping"),      # 代替
+        "salesrank": (p.get("stats") or {}).get("current", {}).get("salesRank") or p.get("salesRank"),
+        "imageurl": pick_first_image(p),
+    }
+
+# ---------- main ----------
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--market", default="jp", choices=list(DOMAIN_ID.keys()))
-    ap.add_argument("--max-pages", type=int, default=200, help="この実行で巡回する最大ページ数")
-    ap.add_argument("--max-minutes", type=int, default=45, help="この実行の上限時間（分）")
-    ap.add_argument("--checkpoint", default="data/asins_supplements_{market}.json", help="保存ファイルパス（{market} 可）")
-    ap.add_argument("--min-rating", type=float, default=3.5, help="レビュー平均の下限（粗いフィルタ）")
-    ap.add_argument("--min-reviews", type=int, default=20, help="レビュー件数の下限（粗いフィルタ）")
+    ap.add_argument("--asin-file", default="data/supplement_asins.json",
+                    help="ASINリスト(JSON配列)のパス")
+    ap.add_argument("--out", default="supplement_product_details.json",
+                    help="出力JSON（配列）。既存があればマージ更新")
+    ap.add_argument("--checkpoint", default="data/supplement_details_progress.json",
+                    help="進捗(完了ASIN set)を保存するJSON")
+    ap.add_argument("--batch-size", type=int, default=100,
+                    help="Keepa product 呼び出し時のバッチ数（推奨≤100）")
+    ap.add_argument("--max-asins", type=int, default=600,
+                    help="今回処理する最大ASIN数（未処理集合から）")
+    ap.add_argument("--max-minutes", type=int, default=40,
+                    help="今回の最大実行分数（429待ち含む）")
     args = ap.parse_args()
 
     domain_id = DOMAIN_ID[args.market]
-    out_path = pathlib.Path(args.checkpoint.format(market=args.market))
-    asins = load_checkpoint(out_path)
-    print(f"[i] checkpoint: {len(asins)} 件読み込み")
+
+    asin_file = Path(args.asin_file)
+    out_path = Path(args.out)
+    ckpt_path = Path(args.checkpoint)
+
+    asin_list = load_json(asin_file, [])
+    if not isinstance(asin_list, list) or not asin_list:
+        print(f"ERROR: ASIN list not found or empty: {asin_file}", file=sys.stderr)
+        sys.exit(1)
+
+    existing = load_json(out_path, [])
+    details_by_asin = {row.get("asin"): row for row in existing if row.get("asin")}
+
+    done_set = set(load_json(ckpt_path, []))
+
+    # 未処理ASIN
+    remaining = [a for a in asin_list if a not in done_set]
+
+    if not remaining:
+        print("[i] No remaining ASINs. Nothing to do.")
+        print(f"[i] Details total: {len(details_by_asin)}")
+        return
+
+    if args.max_asins > 0:
+        remaining = remaining[:args.max_asins]
 
     start = datetime.utcnow()
-    page = 0
-    save_every = 150  # 150件刻みでセーブ
+    processed = 0
 
-    while page < args.max_pages:
-        # 時間上限（Actionsが切れても再開できるよう、短めで切る）
+    print(f"[i] Target ASINs this run: {len(remaining)} (file: {asin_file})")
+    print(f"[i] Already done in checkpoint: {len(done_set)}")
+    print(f"[i] Existing details: {len(details_by_asin)}")
+
+    total_batches = math.ceil(len(remaining) / args.batch_size)
+    for bi in range(total_batches):
         if datetime.utcnow() - start > timedelta(minutes=args.max_minutes):
-            print("[i] 時間上限に達したため中断（次回再開）")
+            print("[i] Reached time limit. Saving and exit (resume next run).")
             break
 
-        selection = {
-            "page": page,
-            "domainId": domain_id,
-            "includeCategories": JP_SUPP_CATS,
-            "priceTypes": 3,
-            "sortType": 4,           # ランキング順
-            "filterErotic": True,
-            "isRangeEnabled": True,
-            "isFilterEnabled": True,
-
-            # 取得を絞って429を抑える（Keepaの deal selection による粗フィルタ）
-            "minRating": args.min_rating,
-            "minReviewCount": args.min_reviews
-        }
+        batch = remaining[bi*args.batch_size : (bi+1)*args.batch_size]
+        if not batch:
+            break
 
         try:
-            data = fetch_page(selection)
+            data = request_keepa_products(domain_id, batch)
         except Exception as e:
-            print(f"[!] fetch_page error: {e}")
-            time.sleep(15)
-            page += 1
+            print(f"[!] Keepa request failed (batch {bi+1}/{total_batches}): {e}", file=sys.stderr)
+            time.sleep(2)
             continue
 
-        deals = data.get("deals", {}).get("dr", [])
-        if not deals:
-            print(f"[i] page={page}: no results → stop")
-            break
+        products = data.get("products") or []
+        mapped = [map_product_row(p) for p in products if p and p.get("asin")]
 
-        added = 0
-        for d in deals:
-            asin = d.get("asin")
-            title = (d.get("title") or d.get("titleShort") or "")
-            if not asin:
-                continue
-            # BCAA/EAA に寄せたい時：タイトルで最終フィルタ
-            if not title_is_supplement(title):
-                continue
-            if asin not in asins:
-                asins.add(asin)
-                added += 1
+        for row in mapped:
+            details_by_asin[row["asin"]] = row
 
-        print(f"[{page}] +{added} / total {len(asins)}")
+        processed += len(batch)
+        done_set.update(batch)
 
-        # 進捗セーブ（定期）
-        if added > 0 and len(asins) % save_every < 10:
-            save_checkpoint(out_path, asins)
-            print(f"[✓] checkpoint saved: {out_path} ({len(asins)})")
+        # 中間保存
+        save_json(out_path, list(details_by_asin.values()))
+        save_json(ckpt_path, sorted(done_set))
 
-        # 次ページへ（429防止のゆるい間隔 + ジッター）
-        time.sleep(1.2 + random.uniform(0, 0.6))
-        page += 1
+        print(f"[{bi+1}/{total_batches}] fetched {len(mapped)} / batch={len(batch)} "
+              f"processed={processed} details_total={len(details_by_asin)}")
+
+        time.sleep(0.8)
 
     # 最終保存
-    save_checkpoint(out_path, asins)
-    print(f"[✓] 完了: {len(asins)} 件 → {out_path}")
+    save_json(out_path, list(details_by_asin.values()))
+    save_json(ckpt_path, sorted(done_set))
+
+    print(f"[✓] Done this run: processed={processed}, details_total={len(details_by_asin)}")
+    print(f"[✓] Checkpoint: {ckpt_path} (done_asins={len(done_set)})")
+    print(f"[✓] Output: {out_path}")
 
 if __name__ == "__main__":
     main()
