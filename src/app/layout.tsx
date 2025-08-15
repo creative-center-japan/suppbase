@@ -11,9 +11,6 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 export const metadata = {
   title: "SuppBase | サプリ・プロテイン ランキング",
   description: "サプリとデータで、ちょっと未来の自分へ。",
-  icons: {
-    icon: "/favicon.png", // public に置く
-  },
 };
 
 export default function RootLayout({
