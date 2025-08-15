@@ -13,7 +13,7 @@ concurrency:
 jobs:
   run-scrapers:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 90
 
     steps:
       - name: Checkout
@@ -29,27 +29,25 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests pandas python-dateutil psycopg2-binary supabase
 
-      # ========= 1) ASIN収集 =========
-      # プロテイン（既存）
+      # --- プロテイン
       - name: Run fetch_keepa.py
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
         run: |
           python scripts/fetch_keepa.py
 
-      # サプリ（途中再開・制限付き）
+      # --- サプリメント（途中再開・制限付き）
       - name: Download supplement checkpoint (if exists)
         uses: actions/download-artifact@v4
         with:
           name: asins-supplements-jp
           path: data
-        continue-on-error: true
+          if-no-files-found: ignore
 
       - name: Run fetch_keepa_supplement.py (resume friendly)
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
         run: |
-          # 例：日本。他国は --market us/uk/de 等に変更で流用可
           python scripts/fetch_keepa_supplement.py \
             --market jp \
             --max-pages 300 \
@@ -65,32 +63,19 @@ jobs:
           path: data/asins_supplements_jp.json
           if-no-files-found: ignore
 
-      # ========= 2) 詳細データ作成（再開対応） =========
-      # 既存進捗の復元
+      # --- 詳細データ（途中再開付き）
       - name: Download details checkpoint (if exists)
         uses: actions/download-artifact@v4
         with:
-          name: details-progress
+          name: supplement-details-progress
           path: data
-        continue-on-error: true
+          if-no-files-found: ignore
 
       - name: Build product_details.json from ASIN list
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
         run: |
-          # --- プロテイン詳細（再開対応版を想定：引数対応）
-          #   product_asins.json は fetch_keepa.py が生成する想定
-          python scripts/fetch_product_details.py \
-            --market jp \
-            --asin-file data/product_asins.json \
-            --out product_details.json \
-            --checkpoint data/details_progress.json \
-            --max-asins 600 \
-            --max-minutes 40 \
-            --batch-size 100
-
-          # --- サプリ詳細（さっき渡した再開対応版）
-          #   supplement_asins.json は fetch_keepa_supplement.py が生成する想定
+          python scripts/fetch_product_details.py
           python scripts/fetch_supplement_product_details.py \
             --market jp \
             --asin-file data/supplement_asins.json \
@@ -99,20 +84,16 @@ jobs:
             --max-asins 600 \
             --max-minutes 40 \
             --batch-size 100
-
           ls -la
 
       - name: Upload details checkpoint
         uses: actions/upload-artifact@v4
-        if: always()
         with:
-          name: details-progress
-          path: |
-            data/details_progress.json
-            data/supplement_details_progress.json
+          name: supplement-details-progress
+          path: data/supplement_details_progress.json
           if-no-files-found: ignore
 
-      # ========= 3) Supabase 取り込み =========
+      # --- Supabase へ取り込み
       - name: Run import_to_Supabase.py
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
