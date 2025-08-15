@@ -16,7 +16,7 @@ export default function AboutPage() {
         <ul className="list-disc list-inside text-gray-700 space-y-2">
           <li>日本と海外のプロテイン・サプリランキングを閲覧</li>
           <li>翻訳記事やレビューで情報収集</li>
-          <li>商品リンクから直接Amazonへアクセス（アフィリエイト付き）</li>
+          <li>商品リンクから直接Amazonへアクセス</li>
         </ul>
       </section>
 
