@@ -12,7 +12,7 @@ export const metadata = {
   title: "SuppBase | サプリ・プロテイン ランキング",
   description: "サプリとデータで、ちょっと未来の自分へ。",
   icons: {
-    icon: "/suppbase-logo.png", // public に置く
+    icon: "/favicon.png", // public に置く
   },
 };
 
