@@ -6,6 +6,9 @@ on:
     # JST 02:00（UTC 17:00）
     - cron: "0 17 * * *"
 
+permissions:
+  contents: read
+
 concurrency:
   group: keepa-supabase-sync
   cancel-in-progress: false
@@ -30,16 +33,10 @@ jobs:
           pip install requests pandas python-dateutil psycopg2-binary supabase
 
       - name: Prepare data dir
-        run: mkdir -p data
-
-      # --- プロテイン（既存ロジック）
-      - name: Run fetch_keepa.py
-        env:
-          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
         run: |
-          python scripts/fetch_keepa.py
+          mkdir -p data
 
-      # --- 以前のチェックポイントがあれば取得（なければ無視）
+      # 既存の supplement ASIN / details のチェックポイントを（あれば）ダウンロード
       - name: Download supplement checkpoint (if exists)
         uses: actions/download-artifact@v4
         with:
@@ -47,30 +44,6 @@ jobs:
           path: data
         continue-on-error: true
 
-      # --- サプリASIN収集（途中再開・しきい値・時間/ページ制限）
-      - name: Run fetch_keepa_supplement.py (resume friendly)
-        env:
-          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
-        run: |
-          python scripts/fetch_keepa_supplement.py \
-            --market jp \
-            --max-pages 300 \
-            --max-minutes 45 \
-            --checkpoint data/supplement_asins.progress.json \
-            --min-rating 3.8 \
-            --min-reviews 40 \
-            --out data/supplement_asins.json
-
-      # --- チェックポイントをアップロード（次回再開用）
-      - name: Upload supplement checkpoint
-        uses: actions/upload-artifact@v4
-        with:
-          name: asins-supplements-jp
-          path: |
-            data/supplement_asins.json
-            data/supplement_asins.progress.json
-
-      # --- 以前の「詳細」チェックポイントがあれば取得（任意）
       - name: Download details checkpoint (if exists)
         uses: actions/download-artifact@v4
         with:
@@ -78,7 +51,35 @@ jobs:
           path: data
         continue-on-error: true
 
-      # --- 詳細データ作成（プロテイン + サプリ）
+      # --- プロテイン（従来どおり）
+      - name: Run fetch_keepa.py
+        env:
+          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+        run: |
+          python scripts/fetch_keepa.py
+
+      # --- サプリ（再開対応・しきい値付き）
+      - name: Run fetch_keepa_supplement.py (resume friendly)
+        env:
+          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+        run: |
+          # 日本のマーケットで BCAA/EAA を穏やかに取得（必要に応じて数値調整OK）
+          python scripts/fetch_keepa_supplement.py \
+            --market jp \
+            --max-pages 300 \
+            --max-minutes 45 \
+            --checkpoint data/supplement_asins.json \
+            --min-rating 3.8 \
+            --min-reviews 40
+
+      - name: Upload supplement checkpoint
+        uses: actions/upload-artifact@v4
+        with:
+          name: asins-supplements-jp
+          path: data/supplement_asins.json
+          retention-days: 7
+
+      # --- 詳細データ（ASIN→詳細）: 途中再開 & 制限
       - name: Build product_details.json from ASIN list
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
@@ -86,26 +87,25 @@ jobs:
           echo "▶ プロテイン詳細"
           python scripts/fetch_product_details.py
 
-          echo "▶ サプリ詳細（BCAA/EAAなどは詳細側でフィルタ）"
+          echo "▶ サプリ詳細（BCAA/EAA などは時間制限でフィルタ）"
           python scripts/fetch_supplement_product_details.py \
             --market jp \
             --asin-file data/supplement_asins.json \
-            --out supplement_product_details.json \
-            --checkpoint data/supplement_details.progress.json \
+            --out data/supplement_product_details.json \
+            --checkpoint data/supplement_details_progress.json \
             --max-asins 600 \
             --max-minutes 40 \
             --batch-size 100
+          ls -la data
 
-          ls -la
-
-      # --- 詳細フェーズのチェックポイントも保存（任意）
       - name: Upload details checkpoint
         uses: actions/upload-artifact@v4
         with:
           name: details-supplements-jp
           path: |
-            data/supplement_details.progress.json
-            supplement_product_details.json
+            data/supplement_details_progress.json
+            data/supplement_product_details.json
+          retention-days: 7
 
       # --- Supabase へ取り込み
       - name: Run import_to_Supabase.py
