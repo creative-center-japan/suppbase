@@ -6,9 +6,6 @@ on:
     # JST 02:00（UTC 17:00）
     - cron: "0 17 * * *"
 
-permissions:
-  contents: read
-
 concurrency:
   group: keepa-supabase-sync
   cancel-in-progress: false
@@ -32,11 +29,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests pandas python-dateutil psycopg2-binary supabase
 
+      # --- 事前に data ディレクトリを用意
       - name: Prepare data dir
         run: |
           mkdir -p data
 
-      # 既存の supplement ASIN / details のチェックポイントを（あれば）ダウンロード
+      # ===== プロテイン（既存） =====
+      - name: Run fetch_keepa.py
+        env:
+          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+        run: |
+          python scripts/fetch_keepa.py
+
+      # ===== サプリメント ASIN 収集（途中再開OK） =====
+      # 失敗しても artifacts から継続できるよう、前回の checkpoint を取得
       - name: Download supplement checkpoint (if exists)
         uses: actions/download-artifact@v4
         with:
@@ -44,31 +50,16 @@ jobs:
           path: data
         continue-on-error: true
 
-      - name: Download details checkpoint (if exists)
-        uses: actions/download-artifact@v4
-        with:
-          name: details-supplements-jp
-          path: data
-        continue-on-error: true
-
-      # --- プロテイン（従来どおり）
-      - name: Run fetch_keepa.py
-        env:
-          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
-        run: |
-          python scripts/fetch_keepa.py
-
-      # --- サプリ（再開対応・しきい値付き）
       - name: Run fetch_keepa_supplement.py (resume friendly)
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
         run: |
-          # 日本のマーケットで BCAA/EAA を穏やかに取得（必要に応じて数値調整OK）
+          # 例：日本のマーケットで BCAA/EAA を穏やかに取得（必要に応じて数値調整OK）
           python scripts/fetch_keepa_supplement.py \
             --market jp \
             --max-pages 300 \
             --max-minutes 45 \
-            --checkpoint data/supplement_asins.json \
+            --checkpoint data/asins_supplements_jp.json \
             --min-rating 3.8 \
             --min-reviews 40
 
@@ -76,10 +67,19 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: asins-supplements-jp
-          path: data/supplement_asins.json
-          retention-days: 7
+          path: data/asins_supplements_jp.json
+          overwrite: true
+          if-no-files-found: ignore
 
-      # --- 詳細データ（ASIN→詳細）: 途中再開 & 制限
+      # ===== 詳細情報フェッチ（途中再開OK） =====
+      # 直前 run の details チェックポイントがあれば取得
+      - name: Download details checkpoint (if exists)
+        uses: actions/download-artifact@v4
+        with:
+          name: details-supplements-jp
+          path: data
+        continue-on-error: true
+
       - name: Build product_details.json from ASIN list
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
@@ -87,7 +87,7 @@ jobs:
           echo "▶ プロテイン詳細"
           python scripts/fetch_product_details.py
 
-          echo "▶ サプリ詳細（BCAA/EAA などは時間制限でフィルタ）"
+          echo "▶ サプリ詳細（BCAA/EAAなどは時間制限でフィルタ）"
           python scripts/fetch_supplement_product_details.py \
             --market jp \
             --asin-file data/supplement_asins.json \
@@ -96,7 +96,6 @@ jobs:
             --max-asins 600 \
             --max-minutes 40 \
             --batch-size 100
-          ls -la data
 
       - name: Upload details checkpoint
         uses: actions/upload-artifact@v4
@@ -105,9 +104,10 @@ jobs:
           path: |
             data/supplement_details_progress.json
             data/supplement_product_details.json
-          retention-days: 7
+          overwrite: true
+          if-no-files-found: ignore
 
-      # --- Supabase へ取り込み
+      # ===== Supabase へ取り込み =====
       - name: Run import_to_Supabase.py
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
