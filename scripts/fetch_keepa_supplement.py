@@ -1,213 +1,238 @@
-#!/usr/bin/env python3
+# scripts/fetch_keepa_supplement.py
 # -*- coding: utf-8 -*-
 
 """
-Supplements (BCAA/EAA/サプリ全般) の ASIN を Keepa から収集するツール（途中再開対応）
-- 指定市場（デフォルト: jp）
-- レーティング/レビュー数のしきい値でフィルタ
-- 最大ページ数 / 最大実行分数で打ち切り
-- 途中再開のためのチェックポイントファイル保存
+BCAA / EAA の ASIN を Keepa /deal API から収集するスクリプト
+- 429(レート制限)に遭遇したら待機して自動リトライ（指数バックオフ）
+- 途中再開（チェックポイントファイル）対応
+- 実行時間・ページ数の上限、レビュー/評価のしきい値で絞り込み
+- タイトルに "BCAA" または "EAA" を含む商品だけを採用（大分類カテゴリのブレを回避）
 
-出力:
-  - data/supplement_asins.json  …… 収集した ASIN 配列（重複なし）
-  - data/supplement_asins.progress.json …… 途中再開用の進捗
+使い方（例：JP、最大300ページ・45分、途中再開しつつフィルタ）
+  python scripts/fetch_keepa_supplement.py \
+      --market jp \
+      --max-pages 300 \
+      --max-minutes 45 \
+      --checkpoint data/asins_supplements_jp.json \
+      --min-rating 3.8 \
+      --min-reviews 40
 """
 
 from __future__ import annotations
+
 import argparse
 import json
 import os
 import sys
 import time
-from pathlib import Path
-from typing import Dict, Any, List, Set, Optional
+import math
+from datetime import datetime, timedelta
+from typing import Dict, Any, List, Set
 
 import requests
 
 
-KEEPA_DEALS_ENDPOINT = "https://api.keepa.com/deal"   # deals API を使って母集団を集める実装
-# ※既存の fetch_product_details.py / fetch_supplement_product_details.py は別途詳細を取る前提
+KEEPA_API = "https://api.keepa.com/deal"
+PAGE_SIZE = 150  # deal API の最大に近い値。レートに配慮しつつ広く拾う
 
 
-def load_json(path: Path, default):
-    if not path.exists():
-        return default
+DOMAIN_MAP = {
+    # Keepa domain: https://keepa.com/#!discuss/t/supported-amazon-domains/40
+    "jp": 5,
+    "us": 1,
+    "uk": 3,
+    "de": 2,
+    "fr": 4,
+    "it": 8,
+    "es": 9,
+    "ca": 6,
+    "mx": 11,
+    "au": 12,
+}
+
+
+def load_checkpoint(path: str) -> Dict[str, Any]:
+    if not path or not os.path.exists(path):
+        return {"page": 0, "asins": []}
     try:
-        with path.open("r", encoding="utf-8") as f:
-            return json.load(f)
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        # 旧形式の互換
+        page = int(data.get("page", 0))
+        asins = data.get("asins", [])
+        if not isinstance(asins, list):
+            asins = []
+        return {"page": page, "asins": asins}
     except Exception:
-        return default
+        return {"page": 0, "asins": []}
 
 
-def save_json(path: Path, data) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    with tmp.open("w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    tmp.replace(path)
+def safe_dump_json(obj: Any, path: str) -> None:
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(obj, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Collect supplement ASINs from Keepa deals (resume friendly)."
-    )
-    parser.add_argument("--market", default="jp", choices=["jp", "us", "uk", "de", "fr", "it", "es", "ca"],
-                        help="Amazon marketplace (Keepa domain)")
-    parser.add_argument("--min-rating", type=float, default=3.8,
-                        help="最小評価（例: 3.8）")
-    parser.add_argument("--min-reviews", type=int, default=40,
-                        help="最小レビュー件数")
-    parser.add_argument("--max-pages", type=int, default=300,
-                        help="取得する最大ページ数")
-    parser.add_argument("--max-minutes", type=int, default=45,
-                        help="取得する最大分数（時間切れで打ち切り）")
-    parser.add_argument("--page-size", type=int, default=150,
-                        help="1ページあたり取得件数（Keepaの既定に依存）")
-    parser.add_argument("--delay-ms", type=int, default=1200,
-                        help="API呼び出し間のスリープ(ミリ秒)")
-    # 出力とチェックポイントは固定ファイル名（プロジェクトとワークフローと合致させる）
-    parser.add_argument("--out", type=Path, default=Path("data/supplement_asins.json"),
-                        help="収集したASINを書き出すJSONファイル")
-    parser.add_argument("--checkpoint", type=Path, default=Path("data/supplement_asins.progress.json"),
-                        help="途中再開用チェックポイント(JSON)")
-    return parser.parse_args()
-
-
-def market_to_domainId(market: str) -> int:
+def is_supplement_title(title: str) -> bool:
     """
-    Keepaの domainId:
-      1: US, 2: GB, 3: DE, 4: FR, 5: JP, 6: CA, 8: IT, 9: ES
+    タイトルに BCAA / EAA を含むか（全角・半角・大小をざっくり許容）
     """
-    table = {
-        "us": 1,
-        "uk": 2,
-        "de": 3,
-        "fr": 4,
-        "jp": 5,
-        "ca": 6,
-        "it": 8,
-        "es": 9,
-    }
-    return table.get(market, 5)
+    if not title:
+        return False
+    t = title.lower()
+    # 半角/全角英字の単純化（完璧ではないが多くのケースを拾える）
+    t = t.replace("ｅ", "e").replace("ａ", "a").replace("ｂ", "b").replace("ｃ", "c")
+    return ("bcaa" in t) or ("eaa" in t)
 
 
-def call_keepa_deals(api_key: str, domain_id: int, page: int, page_size: int,
-                     min_rating: float, min_reviews: int) -> Dict[str, Any]:
+def call_keepa_deal(
+    *,
+    key: str,
+    domain: int,
+    page: int,
+    min_rating: float,
+    min_reviews: int,
+    session: requests.Session,
+    max_retries: int = 6,
+    initial_sleep: float = 30.0,
+) -> Dict[str, Any] | None:
     """
-    Keepa deals API 呼び出し
-    参考: https://keepa.com/#!discuss/t/deal-request/116
-    検索条件は「評価・レビュー件数」など *サプリ全般* を広めに拾う。詳細抽出は詳細側でフィルタ想定。
+    Keepa /deal にアクセス。429 のとき指数バックオフで再試行。
+    それ以外の一時エラー(>=500)も同様にリトライ。4xx(429以外)は致命とみなす。
     """
     params = {
-        "key": api_key,
-        "domain": domain_id,
+        "key": key,
+        "domain": domain,
         "page": page,
-        "pageSize": page_size,
-        # 評価・レビュー件数でふるいにかける
-        "minRating": int(min_rating * 10),  # keepaは 0–50 (=> x10) のスケール
+        "pageSize": PAGE_SIZE,
+        # タイトル検索はクエリが厳密で取り逃すことがあるため、クライアント側で判定する。
+        "minRating": min_rating,
         "minReviewCount": min_reviews,
-        # カテゴリの絞り込みはここでは広めにしておき、のちの詳細取得でBCAA/EAAなど抽出
-        # 必要に応じて "categories" パラメータや "titleSearch" を追加可能。
-        "includeCategories": "",  # 空 = 制限なし
+        # 並び順は売上関連のドロップやセールを優先的に見たい場合は以下も検討:
+        # "sort": "salesRankDrops"  # 必要に応じてコメント解除
     }
-    resp = requests.get(KEEPA_DEALS_ENDPOINT, params=params, timeout=40)
-    if resp.status_code == 429:
-        raise RuntimeError("Keepa 429 (rate limited)")
-    resp.raise_for_status()
-    return resp.json()
+
+    backoff = initial_sleep
+    for attempt in range(max_retries + 1):
+        try:
+            r = session.get(KEEPA_API, params=params, timeout=30)
+            if r.status_code == 200:
+                return r.json()
+            if r.status_code == 429:
+                # レート制限 → 待機して再試行
+                print(f"[!] 429 Too Many Requests on page={page}. sleep {int(backoff)}s then retry...")
+                time.sleep(backoff)
+                backoff = min(backoff * 1.7, 5 * 60)  # 上限5分
+                continue
+            if 500 <= r.status_code < 600:
+                # サーバ側一時エラー
+                print(f"[!] {r.status_code} from Keepa on page={page}. sleep {int(backoff)}s then retry...")
+                time.sleep(backoff)
+                backoff = min(backoff * 1.7, 5 * 60)
+                continue
+
+            # それ以外の 4xx は致命エラーとみなす
+            print(f"[x] HTTP {r.status_code} on page={page}: {r.text[:200]}")
+            return None
+        except requests.RequestException as e:
+            print(f"[!] Network error on page={page}: {e}. sleep {int(backoff)}s then retry...")
+            time.sleep(backoff)
+            backoff = min(backoff * 1.7, 5 * 60)
+    print(f"[x] Retries exhausted on page={page}.")
+    return None
 
 
 def main() -> int:
-    args = parse_args()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--market", default="jp", choices=sorted(DOMAIN_MAP.keys()))
+    ap.add_argument("--max-pages", type=int, default=300)
+    ap.add_argument("--max-minutes", type=int, default=45)
+    ap.add_argument("--checkpoint", type=str, default="data/asins_supplements_jp.json")
+    ap.add_argument("--min-rating", type=float, default=3.8)
+    ap.add_argument("--min-reviews", type=int, default=40)
+    args = ap.parse_args()
 
-    api_key = os.environ.get("KEEPA_API_KEY")
+    api_key = os.getenv("KEEPA_API_KEY")
     if not api_key:
-        print("ERROR: KEEPA_API_KEY is not set.", file=sys.stderr)
+        print("ERROR: KEEPA_API_KEY not set")
         return 2
 
-    domain_id = market_to_domainId(args.market)
+    domain = DOMAIN_MAP[args.market]
+    started = time.time()
+    deadline = started + args.max_minutes * 60.0
 
-    # 既存ASIN & 既存チェックポイントの読み込み
-    asin_list: List[str] = load_json(args.out, default=[])
-    seen: Set[str] = set(asin_list)
+    # チェックポイント読み込み
+    cp = load_checkpoint(args.checkpoint)
+    current_page = int(cp.get("page", 0))
+    collected: Set[str] = set(cp.get("asins", []))
 
-    ckpt: Dict[str, Any] = load_json(args.checkpoint, default={"page": 0})
-    start_page = int(ckpt.get("page", 0))
+    print(f"[i] Resume from page {current_page}, already have {len(collected)} ASINs")
 
-    start_ts = time.time()
-    max_seconds = args.max_minutes * 60
+    session = requests.Session()
 
-    print(f"[i] Resume from page {start_page}, already have {len(seen)} ASINs")
-    current_page = start_page
+    pages_done = 0
+    while pages_done < args.max_pages:
+        # 時間制限
+        if time.time() >= deadline:
+            print("[i] Reached max-minutes. Stop this run.")
+            break
 
-    try:
-        while True:
-            # 時間制限
-            if time.time() - start_ts > max_seconds:
-                print("[i] Time limit reached. Saving checkpoint and stop.")
-                break
+        # Keepa コール
+        data = call_keepa_deal(
+            key=api_key,
+            domain=domain,
+            page=current_page,
+            min_rating=args.min_rating,
+            min_reviews=args.min_reviews,
+            session=session,
+        )
 
-            if current_page >= args.max_pages:
-                print("[i] Reached max pages. Saving checkpoint and stop.")
-                break
+        if data is None:
+            # 致命エラー or リトライ尽きた
+            print("[!] Stop due to error (details above). Checkpoint saved.")
+            # セーブして終了（次回再開）
+            safe_dump_json({"page": current_page, "asins": sorted(list(collected))}, args.checkpoint)
+            break
 
-            # APIコール
-            try:
-                data = call_keepa_deals(
-                    api_key=api_key,
-                    domain_id=domain_id,
-                    page=current_page,
-                    page_size=args.page_size,
-                    min_rating=args.min_rating,
-                    min_reviews=args.min_reviews,
-                )
-            except requests.HTTPError as e:
-                print(f"[!] HTTP error: {e}", file=sys.stderr)
-                # 5xxなどは少し待って継続
-                time.sleep(3)
-                break
-            except RuntimeError as e:
-                # 429 のときは中断（次回再開）
-                print(f"[!] {e} — stop now and resume next time.")
-                break
+        # deal レスポンスから商品配列を取得（keepaの仕様では "deals" 配列）
+        deals = data.get("deals") or []
+        if not deals:
+            print(f"[i] No deals at page={current_page}. Likely end.")
+            # 末尾まで来た可能性 → 保存して終了
+            safe_dump_json({"page": current_page, "asins": sorted(list(collected))}, args.checkpoint)
+            break
 
-            deals = data.get("deals") or []
-            if not deals:
-                print("[i] No more deals. Stop.")
-                break
+        added = 0
+        for d in deals:
+            # 商品情報は "asin" と "title" が基本。見つからなければスキップ。
+            asin = d.get("asin")
+            title = d.get("title") or ""
+            if not asin:
+                continue
 
-            added = 0
-            for d in deals:
-                asin = d.get("asin")
-                # タイトルやカテゴリ条件で軽く弾きたい場合はここに追加（例：protein, bcaa, eaa等）
-                # ここでは広めに保持し、詳細フェーズで精査する方針
-                if asin and asin not in seen:
-                    seen.add(asin)
-                    asin_list.append(asin)
+            # BCAA/EAA をタイトルで抽出（カテゴリばらつき対策）
+            if is_supplement_title(title):
+                if asin not in collected:
+                    collected.add(asin)
                     added += 1
 
-            print(f"[i] page={current_page} got={len(deals)} new={added} total={len(asin_list)}")
+        print(f"[+] page={current_page} → added {added}, total={len(collected)}")
 
-            # 進捗保存
-            save_json(args.out, asin_list)
-            ckpt["page"] = current_page + 1
-            save_json(args.checkpoint, ckpt)
+        # 進捗保存（毎ページ）
+        safe_dump_json({"page": current_page + 1, "asins": sorted(list(collected))}, args.checkpoint)
 
-            # 次ページへ
-            current_page += 1
-            time.sleep(args.delay_ms / 1000.0)
+        # 次ページへ
+        current_page += 1
+        pages_done += 1
 
-    except KeyboardInterrupt:
-        print("\n[i] Interrupted. Saving checkpoint...")
-    finally:
-        # 念のためラスト保存
-        save_json(args.out, asin_list)
-        ckpt["page"] = current_page
-        save_json(args.checkpoint, ckpt)
-        print(f"[✓] ASINs collected: {len(asin_list)} at page={current_page}")
+        # レート配慮の小休止（429が出やすい環境では増やす）
+        time.sleep(1.0)
 
+    duration = int(time.time() - started)
+    print(f"[✓] Done. ASINs collected: {len(collected)} / pages processed: {pages_done} / {duration}s")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())
