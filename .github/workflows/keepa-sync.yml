@@ -34,15 +34,28 @@ jobs:
         run: |
           mkdir -p data
 
-      # ===== プロテイン（既存） =====
+      # ===== プロテイン ASIN 収集 =====
       - name: Run fetch_keepa.py
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
         run: |
           python scripts/fetch_keepa.py
 
+      # ★ プロテインの ASIN 配列を固定パスへ集約
+      - name: Prepare ASIN list for details
+        run: |
+          set -eux
+          # fetch_keepa.py の出力を data/asins_protein_jp.json に統一
+          if [ -f protein_asins_deals_filtered.json ]; then
+            mv protein_asins_deals_filtered.json data/asins_protein_jp.json
+          elif [ -f scripts/protein_asins_deals_filtered.json ]; then
+            mv scripts/protein_asins_deals_filtered.json data/asins_protein_jp.json
+          fi
+          # 非空チェック（空なら即終了）
+          test -s data/asins_protein_jp.json || { echo "ASIN list missing/empty: data/asins_protein_jp.json"; exit 1; }
+          head -c 200 data/asins_protein_jp.json || true
+
       # ===== サプリメント ASIN 収集（途中再開OK） =====
-      # 前回の checkpoint があれば取得（無ければスキップ）
       - name: Download supplement checkpoint (if exists)
         uses: actions/download-artifact@v4
         with:
@@ -54,7 +67,6 @@ jobs:
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
         run: |
-          # 例：日本のマーケットで BCAA/EAA を穏やかに取得（必要に応じて数値調整OK）
           python scripts/fetch_keepa_supplement.py \
             --market jp \
             --max-pages 300 \
@@ -72,7 +84,6 @@ jobs:
           if-no-files-found: ignore
 
       # ===== 詳細情報フェッチ（途中再開OK） =====
-      # 直前 run の details チェックポイントがあれば取得
       - name: Download details checkpoint (if exists)
         uses: actions/download-artifact@v4
         with:
@@ -80,32 +91,30 @@ jobs:
           path: data
         continue-on-error: true
 
-      # デバッグしやすいよう data/ の中身を確認（任意だが便利）
       - name: Inspect data dir
         run: |
-          echo "== data content =="
-          ls -la data || true
-          echo "== head json =="
-          for f in data/*.json; do
-            echo "--- $f"
-            head -n 3 "$f" || true
-          done
+          echo "== data content ==" && ls -la data || true
+          echo "== head json =="; for f in data/*.json; do echo "--- $f"; head -n 3 "$f" || true; done
 
+      # ★ ASIN→商品詳細JSONを生成（import が読むファイル名に出力）
       - name: Build product_details.json from ASIN list
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+          ASIN_LIST_FILE: data/asins_protein_jp.json
+          OUT_PRODUCT: product_details.json
+          OUT_SUPP_PRODUCT: supplement_product_details.json
         run: |
           echo "▶ プロテイン詳細"
           python scripts/fetch_product_details.py
 
           echo "▶ サプリ詳細（BCAA/EAAなどは時間制限でフィルタ）"
-          # 収集ステップで作るASINリストの存在チェック
           test -s data/asins_supplements_jp.json || { echo "ASIN list not found or empty: data/asins_supplements_jp.json"; exit 1; }
 
+          # ★ 出力先を import の想定名（リポジトリ直下）に合わせる
           python scripts/fetch_supplement_product_details.py \
             --market jp \
             --asin-file data/asins_supplements_jp.json \
-            --out data/supplement_product_details.json \
+            --out supplement_product_details.json \
             --checkpoint data/supplement_details_progress.json \
             --max-asins 600 \
             --max-minutes 40 \
@@ -117,7 +126,7 @@ jobs:
           name: details-supplements-jp
           path: |
             data/supplement_details_progress.json
-            data/supplement_product_details.json
+            supplement_product_details.json
           overwrite: true
           if-no-files-found: ignore
 
