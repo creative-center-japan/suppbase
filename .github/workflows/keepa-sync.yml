@@ -41,18 +41,16 @@ jobs:
         run: |
           python scripts/fetch_keepa.py
 
-      # ★ プロテインの ASIN 配列を固定パスへ集約
-      - name: Prepare ASIN list for details
+      # ★ プロテイン ASIN を固定名へ集約（fetch_keepa.py の出力を拾ってリネーム）
+      - name: Prepare protein asin list
         run: |
           set -eux
-          # fetch_keepa.py の出力を data/asins_protein_jp.json に統一
           if [ -f protein_asins_deals_filtered.json ]; then
             mv protein_asins_deals_filtered.json data/asins_protein_jp.json
           elif [ -f scripts/protein_asins_deals_filtered.json ]; then
             mv scripts/protein_asins_deals_filtered.json data/asins_protein_jp.json
           fi
-          # 非空チェック（空なら即終了）
-          test -s data/asins_protein_jp.json || { echo "ASIN list missing/empty: data/asins_protein_jp.json"; exit 1; }
+          test -s data/asins_protein_jp.json || { echo "ASIN list empty: data/asins_protein_jp.json"; exit 1; }
           head -c 200 data/asins_protein_jp.json || true
 
       # ===== サプリメント ASIN 収集（途中再開OK） =====
@@ -96,7 +94,7 @@ jobs:
           echo "== data content ==" && ls -la data || true
           echo "== head json =="; for f in data/*.json; do echo "--- $f"; head -n 3 "$f" || true; done
 
-      # ★ ASIN→商品詳細JSONを生成（import が読むファイル名に出力）
+      # ★ ASIN → 商品詳細 JSON を作成（import が読むファイル名に出力）
       - name: Build product_details.json from ASIN list
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
@@ -110,7 +108,7 @@ jobs:
           echo "▶ サプリ詳細（BCAA/EAAなどは時間制限でフィルタ）"
           test -s data/asins_supplements_jp.json || { echo "ASIN list not found or empty: data/asins_supplements_jp.json"; exit 1; }
 
-          # ★ 出力先を import の想定名（リポジトリ直下）に合わせる
+          # サプリ詳細の出力先もリポジトリ直下に合わせる
           python scripts/fetch_supplement_product_details.py \
             --market jp \
             --asin-file data/asins_supplements_jp.json \
