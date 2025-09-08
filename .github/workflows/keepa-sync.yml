@@ -29,19 +29,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests pandas python-dateutil psycopg2-binary supabase
 
-      # 事前に data ディレクトリを用意
       - name: Prepare data dir
-        run: |
-          mkdir -p data
+        run: mkdir -p data
 
       # ===== プロテイン ASIN 収集 =====
       - name: Run fetch_keepa.py
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
-        run: |
-          python scripts/fetch_keepa.py
+        run: python scripts/fetch_keepa.py
 
-      # ★ プロテイン ASIN を固定名へ集約（fetch_keepa.py の出力を拾ってリネーム）
+      # プロテインASINを固定名に集約（空なら即エラー）
       - name: Prepare protein asin list
         run: |
           set -eux
@@ -51,7 +48,11 @@ jobs:
             mv scripts/protein_asins_deals_filtered.json data/asins_protein_jp.json
           fi
           test -s data/asins_protein_jp.json || { echo "ASIN list empty: data/asins_protein_jp.json"; exit 1; }
-          head -c 200 data/asins_protein_jp.json || true
+
+      # ★ Python ワンライナーで件数を確認
+      - name: Debug protein asin count
+        run: |
+          python -c "import json; print('protein asins count =', len(json.load(open('data/asins_protein_jp.json','r',encoding='utf-8'))))"
 
       # ===== サプリメント ASIN 収集（途中再開OK） =====
       - name: Download supplement checkpoint (if exists)
@@ -94,8 +95,8 @@ jobs:
           echo "== data content ==" && ls -la data || true
           echo "== head json =="; for f in data/*.json; do echo "--- $f"; head -n 3 "$f" || true; done
 
-      # ★ ASIN → 商品詳細 JSON を作成（import が読むファイル名に出力）
-      - name: Build product_details.json from ASIN list
+      # プロテイン詳細（必ず実行）
+      - name: Build product_details.json from protein ASIN list
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
           ASIN_LIST_FILE: data/asins_protein_jp.json
@@ -104,19 +105,29 @@ jobs:
         run: |
           echo "▶ プロテイン詳細"
           python scripts/fetch_product_details.py
+          ls -la product_details.json
 
-          echo "▶ サプリ詳細（BCAA/EAAなどは時間制限でフィルタ）"
-          test -s data/asins_supplements_jp.json || { echo "ASIN list not found or empty: data/asins_supplements_jp.json"; exit 1; }
-
-          # サプリ詳細の出力先もリポジトリ直下に合わせる
-          python scripts/fetch_supplement_product_details.py \
-            --market jp \
-            --asin-file data/asins_supplements_jp.json \
-            --out supplement_product_details.json \
-            --checkpoint data/supplement_details_progress.json \
-            --max-asins 600 \
-            --max-minutes 40 \
-            --batch-size 100
+      # サプリ詳細（ASINが無ければスキップして空JSONを出す）
+      - name: Build supplement_product_details.json (conditional)
+        env:
+          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+        run: |
+          set -e
+          if [ -s data/asins_supplements_jp.json ]; then
+            echo "▶ サプリ詳細: data/asins_supplements_jp.json を処理します"
+            python scripts/fetch_supplement_product_details.py \
+              --market jp \
+              --asin-file data/asins_supplements_jp.json \
+              --out supplement_product_details.json \
+              --checkpoint data/supplement_details_progress.json \
+              --max-asins 600 \
+              --max-minutes 40 \
+              --batch-size 100
+          else
+            echo "▶ サプリ詳細: ASINファイルが空/未生成のためスキップ（空JSONを作成）"
+            echo "[]" > supplement_product_details.json
+          fi
+          ls -la supplement_product_details.json || true
 
       - name: Upload details checkpoint
         uses: actions/upload-artifact@v4
@@ -132,5 +143,4 @@ jobs:
       - name: Run import_to_Supabase.py
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          python scripts/import_to_Supabase.py
+        run: python scripts/import_to_Supabase.py
