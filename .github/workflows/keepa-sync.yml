@@ -82,6 +82,23 @@ jobs:
           overwrite: true
           if-no-files-found: ignore
 
+      # ★ サプリASINの件数をログ（空配列かどうか見える化）
+      - name: Debug supplement asin count
+        run: |
+          python - <<'PY'
+          import json, pathlib, sys
+          p = pathlib.Path('data/asins_supplements_jp.json')
+          if not p.exists():
+              print("supplement asin file: MISSING")
+              sys.exit(0)
+          try:
+              arr = json.load(p.open(encoding='utf-8'))
+              print("supplement asins count =", len(arr))
+              print("is_empty_array =", (isinstance(arr, list) and len(arr)==0))
+          except Exception as e:
+              print("supplement asin file: INVALID:", e)
+          PY
+
       # ===== 詳細情報フェッチ（途中再開OK） =====
       - name: Download details checkpoint (if exists)
         uses: actions/download-artifact@v4
@@ -107,13 +124,14 @@ jobs:
           python scripts/fetch_product_details.py
           ls -la product_details.json
 
-      # サプリ詳細（ASINが無ければスキップして空JSONを出す）
+      # サプリ詳細（ASINが「存在し」かつ「[] ではない」時のみ実行）
       - name: Build supplement_product_details.json (conditional)
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
         run: |
           set -e
-          if [ -s data/asins_supplements_jp.json ]; then
+          if [ -f data/asins_supplements_jp.json ] \
+            && ! grep -E '^[[:space:]]*\[[[:space:]]*\][[:space:]]*$' -q data/asins_supplements_jp.json; then
             echo "▶ サプリ詳細: data/asins_supplements_jp.json を処理します"
             python scripts/fetch_supplement_product_details.py \
               --market jp \
