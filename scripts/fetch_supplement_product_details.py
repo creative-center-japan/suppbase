@@ -6,16 +6,6 @@ Fetch supplement product details from Keepa by ASIN list.
 - resume with checkpoint
 - limit by max-asins / max-minutes
 - batching requests to Keepa API
-
-Usage example:
-  python scripts/fetch_supplement_product_details.py \
-    --market jp \
-    --asin-file data/supplement_asins.json \
-    --out data/supplement_product_details.json \
-    --checkpoint data/supplement_details_progress.json \
-    --max-asins 600 \
-    --max-minutes 40 \
-    --batch-size 100
 """
 
 import argparse
@@ -38,8 +28,7 @@ def load_json_list(path: str) -> List[str]:
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        # { "items": [...] } 形式も許容
-        if isinstance(data, dict) and "items" in data:
+        if isinstance(data, dict) and "items" in data:  # { "items": [...] } 形式も許容
             data = data["items"]
         if isinstance(data, list):
             return [str(x).strip() for x in data if str(x).strip()]
@@ -70,14 +59,15 @@ def keepa_products(key: str, domain: int, asins: List[str]) -> Dict[str, Any]:
 def product_to_row(p: Dict[str, Any]) -> Dict[str, Any]:
     asin = p.get("asin")
     title = p.get("title")
-    brand = p.get("brand")
+    if not title:  # title が無い商品はスキップ
+        return {}
 
+    brand = p.get("brand")
     img = None
     if isinstance(p.get("imagesCSV"), str) and p["imagesCSV"]:
         img = p["imagesCSV"].split(",")[0].strip()
 
     stats = p.get("stats", {}) or {}
-    # Keepa の価格は最小単位（例：日本円→そのまま / USD→セント）で返ることがある点に注意
     buybox = stats.get("buyBoxPrice")
     rating = stats.get("rating")
     reviews = stats.get("reviewCount")
@@ -112,10 +102,11 @@ def main():
 
     asins = load_json_list(args.asin_file)
     if not asins:
-        print(f"ERROR: ASIN file empty or invalid: {args.asin_file}", file=sys.stderr)
-        sys.exit(1)
+        print(f"[i] No ASINs found in {args.asin_file}. Skipping and writing empty result.")
+        save_json(args.out, [])
+        return 0
 
-    # チェックポイント（既処理 ASIN）
+    # チェックポイント
     done: Dict[str, Dict[str, Any]] = {}
     if os.path.exists(args.checkpoint):
         try:
@@ -125,7 +116,7 @@ def main():
     if not isinstance(done, dict):
         done = {}
 
-    # 既存 out をマージ（重複保存防止）
+    # 既存 out をマージ
     existing: Dict[str, Dict[str, Any]] = {}
     if os.path.exists(args.out):
         try:
@@ -143,7 +134,6 @@ def main():
     collected: Dict[str, Dict[str, Any]] = {}
     collected.update(existing)
 
-    # 未処理 ASIN のみに限定
     target = [a for a in asins if a not in done and a not in collected]
     if args.max_asins and len(target) > args.max_asins:
         target = target[: args.max_asins]
@@ -164,6 +154,8 @@ def main():
             prods = res.get("products") or []
             for p in prods:
                 row = product_to_row(p)
+                if not row:  # 無効商品はスキップ
+                    continue
                 asin = row.get("asin")
                 if asin:
                     collected[asin] = row
@@ -178,12 +170,13 @@ def main():
             time.sleep(2)
             continue
 
-        # 進捗スナップショット
+        # 進捗保存
         save_json(args.checkpoint, done)
 
     out_list = list(collected.values())
     save_json(args.out, out_list)
     print(f"[v] Details fetched: {len(out_list)}")
+    return 0
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

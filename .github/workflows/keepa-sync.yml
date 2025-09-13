@@ -80,21 +80,9 @@ jobs:
           if-no-files-found: ignore
 
       - name: Debug supplement asin count
-        run: |
-          python - <<'PY'
-import json, pathlib, sys
-p = pathlib.Path('data/asins_supplements_jp.json')
-if not p.exists():
-    print("supplement asin file: MISSING"); sys.exit(0)
-try:
-    arr = json.load(p.open(encoding='utf-8'))
-    print("supplement asins count =", len(arr) if isinstance(arr, list) else "N/A (not a list)")
-    print("is_empty_array =", isinstance(arr, list) and len(arr) == 0)
-except Exception as e:
-    print("supplement asin file: INVALID:", e)
-PY
+        run: python scripts/debug_supp_asin_count.py
 
-      # ==== Details fetch (resume-friendly) ====
+      # ==== Details checkpoint (resume-friendly) ====
       - name: Download details checkpoint (if exists)
         uses: actions/download-artifact@v4
         with:
@@ -118,43 +106,18 @@ PY
           python scripts/fetch_product_details.py
           ls -la product_details.json
 
-      # run supplement details only when the asin list is a non-empty array
-      - name: Build supplement_product_details.json (conditional)
+      - name: Build supplement_product_details.json
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
         run: |
-          set +e
-          python - <<'PY'
-import json, os, sys
-p = 'data/asins_supplements_jp.json'
-try:
-    if not os.path.exists(p):
-        sys.exit(2)
-    with open(p, encoding='utf-8') as f:
-        d = json.load(f)
-    ok = isinstance(d, list) and len(d) > 0 and all(isinstance(x, str) and x for x in d)
-    sys.exit(0 if ok else 2)
-except Exception:
-    sys.exit(2)
-PY
-          CODE=$?
-          set -e
-
-          if [ "$CODE" -eq 0 ]; then
-            echo "Supplement details: run"
-            python scripts/fetch_supplement_product_details.py \
-              --market jp \
-              --asin-file data/asins_supplements_jp.json \
-              --out supplement_product_details.json \
-              --checkpoint data/supplement_details_progress.json \
-              --max-asins 600 \
-              --max-minutes 40 \
-              --batch-size 100
-          else
-            echo "Supplement details: skip (write empty JSON)"
-            echo "[]" > supplement_product_details.json
-          fi
-
+          python scripts/fetch_supplement_product_details.py \
+            --market jp \
+            --asin-file data/asins_supplements_jp.json \
+            --out supplement_product_details.json \
+            --checkpoint data/supplement_details_progress.json \
+            --max-asins 600 \
+            --max-minutes 40 \
+            --batch-size 100
           ls -la supplement_product_details.json || true
 
       - name: Upload details checkpoint
