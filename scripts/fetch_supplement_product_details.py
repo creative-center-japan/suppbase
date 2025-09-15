@@ -6,6 +6,7 @@ Fetch supplement product details from Keepa by ASIN list.
 - resume with checkpoint
 - limit by max-asins / max-minutes
 - batching requests to Keepa API
+- SAFE: empty/invalid ASIN file -> write [] and exit(0)
 """
 
 import argparse
@@ -23,12 +24,13 @@ MARKET_TO_DOMAIN = {
 }
 
 def load_json_list(path: str) -> List[str]:
+    """Return list[str] from JSON file; tolerate {}, {"items":[...]}, errors -> []"""
     if not os.path.exists(path):
         return []
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        if isinstance(data, dict) and "items" in data:  # { "items": [...] } 形式も許容
+        if isinstance(data, dict) and "items" in data:
             data = data["items"]
         if isinstance(data, list):
             return [str(x).strip() for x in data if str(x).strip()]
@@ -37,7 +39,10 @@ def load_json_list(path: str) -> List[str]:
     return []
 
 def save_json(path: str, obj: Any):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    """mkdir only when dirname is non-empty; safe for files like 'x.json' in cwd"""
+    dirpath = os.path.dirname(path)
+    if dirpath:
+        os.makedirs(dirpath, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False, indent=2)
 
@@ -59,19 +64,16 @@ def keepa_products(key: str, domain: int, asins: List[str]) -> Dict[str, Any]:
 def product_to_row(p: Dict[str, Any]) -> Dict[str, Any]:
     asin = p.get("asin")
     title = p.get("title")
-    if not title:  # title が無い商品はスキップ
+    if not title:  # skip invalid
         return {}
-
     brand = p.get("brand")
     img = None
     if isinstance(p.get("imagesCSV"), str) and p["imagesCSV"]:
         img = p["imagesCSV"].split(",")[0].strip()
-
     stats = p.get("stats", {}) or {}
     buybox = stats.get("buyBoxPrice")
     rating = stats.get("rating")
     reviews = stats.get("reviewCount")
-
     return {
         "asin": asin,
         "title": title,
@@ -86,7 +88,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--market", default="jp", help="jp/us/uk/... (Keepa domain)")
     ap.add_argument("--asin-file", dest="asin_file", required=True, help="JSON list file of ASINs")
-    ap.add_argument("--out", required=True, help="Output JSON (append/merge)")
+    ap.add_argument("--out", required=True, help="Output JSON file path")
     ap.add_argument("--checkpoint", default="data/supplement_details_progress.json")
     ap.add_argument("--max-asins", type=int, default=600)
     ap.add_argument("--max-minutes", type=int, default=40)
@@ -96,31 +98,34 @@ def main():
     key = os.getenv("KEEPA_API_KEY")
     if not key:
         print("ERROR: KEEPA_API_KEY not set", file=sys.stderr)
-        sys.exit(1)
+        return 1
 
     domain = MARKET_TO_DOMAIN.get(args.market.lower(), 5)
 
+    # Load ASINs
     asins = load_json_list(args.asin_file)
     if not asins:
         print(f"[i] No ASINs found in {args.asin_file}. Skipping and writing empty result.")
         save_json(args.out, [])
         return 0
 
-    # チェックポイント
+    # Load checkpoint (dict of done asins)
     done: Dict[str, Dict[str, Any]] = {}
     if os.path.exists(args.checkpoint):
         try:
-            done = json.load(open(args.checkpoint, "r", encoding="utf-8"))
+            with open(args.checkpoint, "r", encoding="utf-8") as f:
+                done = json.load(f)
         except Exception:
             done = {}
     if not isinstance(done, dict):
         done = {}
 
-    # 既存 out をマージ
+    # Merge existing out
     existing: Dict[str, Dict[str, Any]] = {}
     if os.path.exists(args.out):
         try:
-            ex = json.load(open(args.out, "r", encoding="utf-8"))
+            with open(args.out, "r", encoding="utf-8") as f:
+                ex = json.load(f)
             if isinstance(ex, list):
                 for row in ex:
                     if isinstance(row, dict) and row.get("asin"):
@@ -131,8 +136,7 @@ def main():
             pass
 
     deadline = datetime.utcnow() + timedelta(minutes=args.max_minutes)
-    collected: Dict[str, Dict[str, Any]] = {}
-    collected.update(existing)
+    collected: Dict[str, Dict[str, Any]] = dict(existing)
 
     target = [a for a in asins if a not in done and a not in collected]
     if args.max_asins and len(target) > args.max_asins:
@@ -154,7 +158,7 @@ def main():
             prods = res.get("products") or []
             for p in prods:
                 row = product_to_row(p)
-                if not row:  # 無効商品はスキップ
+                if not row:
                     continue
                 asin = row.get("asin")
                 if asin:
@@ -170,7 +174,7 @@ def main():
             time.sleep(2)
             continue
 
-        # 進捗保存
+        # Save progress every batch
         save_json(args.checkpoint, done)
 
     out_list = list(collected.values())
