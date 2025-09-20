@@ -82,7 +82,7 @@ jobs:
       - name: Debug supplement asin count
         run: python scripts/debug_supp_asin_count.py
 
-      # ==== Details checkpoint (resume-friendly) ====
+      # ==== Details (resume-friendly) ====
       - name: Download details checkpoint (if exists)
         uses: actions/download-artifact@v4
         with:
@@ -130,7 +130,10 @@ jobs:
           overwrite: true
           if-no-files-found: ignore
 
+      # ==== Import to Supabase (REST / service_role) ====
+      # ここが今回のマージ点：Secrets から SUPABASE_* を渡す
       - name: Run import_to_Supabase.py
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
         run: python scripts/import_to_Supabase.py
