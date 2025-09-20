@@ -130,8 +130,13 @@ jobs:
           overwrite: true
           if-no-files-found: ignore
 
+      # ==== Debug: Secrets が届いているかだけチェック（中身は出ない）====
+      - name: Debug secrets presence
+        run: |
+          test -n "${{ secrets.SUPABASE_URL }}" && echo "SUPABASE_URL: set" || (echo "SUPABASE_URL: MISSING" && exit 1)
+          test -n "${{ secrets.SUPABASE_SERVICE_ROLE }}" && echo "SERVICE_ROLE: set" || (echo "SERVICE_ROLE: MISSING" && exit 1)
+
       # ==== Import to Supabase (REST / service_role) ====
-      # ここが今回のマージ点：Secrets から SUPABASE_* を渡す
       - name: Run import_to_Supabase.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
