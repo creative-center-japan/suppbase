@@ -1,3 +1,5 @@
+// src\app\rankings\japan\supplements\page.tsx
+
 'use client';
 
 import { useEffect, useState } from 'react';
