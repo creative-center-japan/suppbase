@@ -51,16 +51,47 @@ export async function GET(req: NextRequest) {
     const sort = sp.get('sort') ?? 'drop';
     const limit = Math.max(1, Math.min(100, Number(sp.get('limit') ?? '10')));
 
+    // === where 条件をタイプ別に分岐 ===
     let where = '';
-    if (type === 'whey') where = "WHERE title ILIKE '%ホエイ%' OR title ILIKE '%WPI%'";
-    else if (type === 'soy') where = "WHERE title ILIKE '%ソイ%'";
-    else if (type === 'isolate') where = "WHERE title ILIKE '%WPI%' OR title ILIKE '%アイソレート%'";
-    else if (type === 'bcaa') where = "WHERE title ILIKE '%BCAA%' OR title ILIKE '%bcaa%'";
-    else if (type === 'eaa') where = "WHERE title ILIKE '%EAA%' OR title ILIKE '%eaa%'";
-    else if (type === 'other') where = `
-      WHERE title NOT ILIKE '%ホエイ%' AND title NOT ILIKE '%WPI%' AND title NOT ILIKE '%ソイ%'
-        AND title NOT ILIKE '%アイソレート%' AND title NOT ILIKE '%BCAA%' AND title NOT ILIKE '%EAA%'
-        AND title NOT ILIKE '%bcaa%' AND title NOT ILIKE '%eaa%'`;
+    if (type === 'whey') {
+      where = `
+        WHERE (
+          title ILIKE '%ホエイ%' OR title ILIKE '%whey%'
+        )
+        AND title NOT ILIKE '%WPI%'
+        AND title NOT ILIKE '%アイソレート%'
+        AND title NOT ILIKE '%isolate%'
+      `;
+    } else if (type === 'isolate') {
+      where = `
+        WHERE
+          title ILIKE '%WPI%' OR
+          title ILIKE '%アイソレート%' OR
+          title ILIKE '%isolate%'
+      `;
+    } else if (type === 'soy') {
+      where = "WHERE title ILIKE '%ソイ%' OR title ILIKE '%soy%'";
+    } else if (type === 'bcaa') {
+      where = `
+        WHERE
+          title ILIKE '%BCAA%' OR title ILIKE '%bcaa%' OR
+          title ILIKE '%ＢＣＡＡ%'
+      `;
+    } else if (type === 'eaa') {
+      where = `
+        WHERE
+          title ILIKE '%EAA%' OR title ILIKE '%eaa%' OR
+          title ILIKE '%ＥＡＡ%'
+      `;
+    } else if (type === 'other') {
+      where = `
+        WHERE title NOT ILIKE '%ホエイ%' AND title NOT ILIKE '%whey%'
+          AND title NOT ILIKE '%WPI%' AND title NOT ILIKE '%アイソレート%' AND title NOT ILIKE '%isolate%'
+          AND title NOT ILIKE '%ソイ%' AND title NOT ILIKE '%soy%'
+          AND title NOT ILIKE '%BCAA%' AND title NOT ILIKE '%bcaa%' AND title NOT ILIKE '%ＢＣＡＡ%'
+          AND title NOT ILIKE '%EAA%'  AND title NOT ILIKE '%eaa%'  AND title NOT ILIKE '%ＥＡＡ%'
+      `;
+    }
 
     let order = 'ORDER BY droprate DESC NULLS LAST';
     if (sort === 'score') order = 'ORDER BY score DESC NULLS LAST';
@@ -101,7 +132,6 @@ export async function GET(req: NextRequest) {
     const { rows } = await pool.query<ProductRow>(sql, [limit]);
 
     const results = rows.map((item, i) => {
-      // DBにscoreが無い/NULLの場合は簡易スコアでフォールバック
       const fallback = (item.droprate ?? 0) * 2 + (10000 - (item.salesrank ?? 10000));
       const score = item.score ?? fallback;
 
@@ -118,7 +148,7 @@ export async function GET(req: NextRequest) {
         dropRateDiff: diff,
         score,
         imageUrl: item.imageurl,
-        affiliateUrl: `https://www.amazon.co.jp/dp/${item.asin}?tag=yourtag-22`,
+        affiliateUrl: `https://www.amazon.co.jp/dp/${item.asin}`,
       };
     });
 

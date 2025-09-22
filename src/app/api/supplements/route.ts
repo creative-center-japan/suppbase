@@ -1,4 +1,3 @@
-// src\app\api\supplements\route.ts
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -46,14 +45,15 @@ type ProductRow = {
 export async function GET(req: NextRequest) {
   try {
     const sp = new URL(req.url).searchParams;
-    const type = (sp.get('type') ?? 'bcaa').toLowerCase();      // 'bcaa' | 'eaa'
-    const sort = sp.get('sort') ?? 'score';                     // 'score' | 'droprate' | 'sales' | 'price'
+    const type = (sp.get('type') ?? 'bcaa').toLowerCase();
+    const sort = sp.get('sort') ?? 'score';
     const limit = Math.max(1, Math.min(100, Number(sp.get('limit') ?? '50')));
 
+    // === where 条件（全角/半角を両方サポート）===
     const where =
       type === 'eaa'
-        ? "WHERE title ILIKE '%EAA%' OR title ILIKE '%eaa%'"
-        : "WHERE title ILIKE '%BCAA%' OR title ILIKE '%bcaa%'";
+        ? `WHERE title ILIKE '%EAA%' OR title ILIKE '%eaa%' OR title ILIKE '%ＥＡＡ%'`
+        : `WHERE title ILIKE '%BCAA%' OR title ILIKE '%bcaa%' OR title ILIKE '%ＢＣＡＡ%'`;
 
     let order = 'ORDER BY score DESC NULLS LAST';
     if (sort === 'droprate') order = 'ORDER BY droprate DESC NULLS LAST';
@@ -104,10 +104,10 @@ export async function GET(req: NextRequest) {
         title: p.title,
         brand: p.brand ?? '',
         price,
-        imageUrl: p.imageurl,       // ← UIは imageUrl を参照
+        imageUrl: p.imageurl,
         dropRate: p.droprate,
         dropRateDiff: diff,
-        score: p.score ?? null,     // DB計算済みスコア
+        score: p.score ?? null,
         affiliateUrl: `https://www.amazon.co.jp/dp/${p.asin}`,
       };
     });
