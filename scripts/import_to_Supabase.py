@@ -1,10 +1,8 @@
 # import_to_Supabase.py
-# DB直結(psycopg2)は使わず、Supabase REST経由で安全にUPSERTします。
 import os
 import json
 import time
 from typing import Any, Dict, List
-
 from supabase import create_client, Client
 
 INPUT_FILES = [
@@ -12,27 +10,22 @@ INPUT_FILES = [
     "supplement_product_details.json",
 ]
 
-# ---- 取り込み対象のJSON → productsテーブル行へ整形 ----
 def to_row(p: Dict[str, Any]) -> Dict[str, Any]:
     asin = p.get("asin")
     if not asin:
         return {}
-
     title = p.get("title")
     brand = p.get("brand")
 
-    # buyBoxPrice はセント表現のことがあるので、そのまま入れてフロントで/100
     buyBoxPrice = p.get("buyBoxPrice")
     buyBoxFallback = p.get("buyBoxFallback")
 
-    # salesRank（両形式に対応）
     salesRank = p.get("salesRank")
     if salesRank is None:
         ranks = (p.get("salesRanks") or {}).get("0")
         if isinstance(ranks, list) and ranks:
             salesRank = ranks[-1]
 
-    # 画像URL
     imageUrl = p.get("imageUrl")
     if not imageUrl:
         images_csv = (p.get("imagesCSV") or "")
@@ -40,10 +33,10 @@ def to_row(p: Dict[str, Any]) -> Dict[str, Any]:
             image_id = images_csv.split(",")[0]
             imageUrl = f"https://images-na.ssl-images-amazon.com/images/I/{image_id}.jpg"
 
-    # 追加：rating / reviewcount / score
+    # ★ 追加：rating / reviewcount / score
     rating = p.get("rating")
     reviewcount = p.get("reviewCount") if "reviewCount" in p else p.get("reviewcount")
-    score = p.get("score")  # 事前計算してある場合のみ。通常はNULL → 後段SQLで更新
+    score = p.get("score")  # 通常はNULL（後段SQLで更新）
 
     return {
         "asin": asin,
@@ -71,9 +64,7 @@ def load_products(files: List[str]) -> List[Dict[str, Any]]:
                 acc.extend(data)
         except Exception as e:
             print(f"[!] failed to read {name}: {e}")
-    # 整形
     rows = [r for r in (to_row(p) for p in acc) if r.get("asin")]
-    # asin重複は最後勝ちに正規化
     dedup: Dict[str, Dict[str, Any]] = {r["asin"]: r for r in rows}
     out = list(dedup.values())
     print(f"[i] rows after normalize: {len(out)}")
@@ -84,7 +75,6 @@ def chunked(lst: List[Dict[str, Any]], size: int) -> List[List[Dict[str, Any]]]:
 
 def upsert_with_retry(tbl: Any, rows: List[Dict[str, Any]], on_conflict: str = "asin",
                       max_retries: int = 5) -> None:
-    """Supabaseの挿入はときどき429/5xxが出るので指数バックオフでリトライ"""
     attempt = 0
     while True:
         try:
@@ -99,14 +89,10 @@ def upsert_with_retry(tbl: Any, rows: List[Dict[str, Any]], on_conflict: str = "
             time.sleep(sleep)
 
 def main() -> None:
-    # Secrets から Supabase 接続情報を取得
     url = os.environ.get("SUPABASE_URL")
     key = os.environ.get("SUPABASE_SERVICE_ROLE")
     if not url or not key:
-        raise RuntimeError("SUPABASE_URL / SUPABASE_SERVICE_ROLE が未設定です。"
-                           "（SupabaseのProject settings → APIで確認し、"
-                           "GitHub Secrets に登録してください）")
-
+        raise RuntimeError("SUPABASE_URL / SUPABASE_SERVICE_ROLE が未設定です。")
     client: Client = create_client(url, key)
 
     rows = load_products(INPUT_FILES)
@@ -114,7 +100,6 @@ def main() -> None:
         print("[i] no rows to import; exit normally")
         return
 
-    # 1000行ずつUPSERT
     BATCH = 1000
     total = 0
     table = client.table("products")

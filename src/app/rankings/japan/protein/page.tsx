@@ -2,14 +2,14 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 
 const tabs = [
   { id: 'whey', label: 'ホエイ' },
   { id: 'soy', label: 'ソイ' },
-  { id: 'isolate', label: 'アイソレート（WPI）' }
+  { id: 'isolate', label: 'アイソレート（WPI）' },
 ];
 
 type ProductItem = {
@@ -19,15 +19,35 @@ type ProductItem = {
   brand: string;
   price: number | null;
   imageUrl: string;
-  dropRate: number;
-  dropRateDiff: number;
-  score: number;
+  dropRate: number | null;
+  dropRateDiff: number | null;
+  score: number | null;
   affiliateUrl: string;
+  /** ★ APIが返すことを想定（DBのupdated_atをそのまま） */
+  updatedAt?: string; // ISO e.g. "2025-09-21T10:23:45.123Z"
 };
+
+function fmtRangeFromItems(items: ProductItem[], fallback = '直近30日') {
+  if (!items?.length) return fallback;
+  const dates = items
+    .map(i => (i.updatedAt ? new Date(i.updatedAt) : null))
+    .filter((d): d is Date => d instanceof Date && !isNaN(+d));
+  if (!dates.length) return fallback;
+
+  const min = new Date(Math.min(...dates.map(d => +d)));
+  const max = new Date(Math.max(...dates.map(d => +d)));
+
+  // 同じ年月なら「YYYY年M月」
+  if (min.getUTCFullYear() === max.getUTCFullYear() && min.getUTCMonth() === max.getUTCMonth()) {
+    return `${max.getUTCFullYear()}年${max.getUTCMonth() + 1}月`;
+  }
+  // 月をまたいでいたら「M/D〜M/D」
+  const mmdd = (d: Date) => `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
+  return `${mmdd(min)}〜${mmdd(max)}`;
+}
 
 const RankingSection = ({ items }: { items: ProductItem[] }) => {
   if (!items.length) return <p className="text-center text-gray-400">ランキング読み込み中...</p>;
-
   return (
     <div className="space-y-4">
       {items.map(item => (
@@ -69,21 +89,19 @@ const RankingSection = ({ items }: { items: ProductItem[] }) => {
                 </h3>
                 <p className="text-sm text-gray-600">{item.brand}</p>
               </div>
-              <div>
-                <a
-                  href={item.affiliateUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-block w-32 h-9 bg-green-600 text-white text-sm text-center leading-9 rounded hover:bg-green-700"
-                >
-                  Amazonで見る
-                </a>
-              </div>
+              <a
+                href={item.affiliateUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block w-32 h-9 bg-green-600 text-white text-sm text-center leading-9 rounded hover:bg-green-700"
+              >
+                Amazonで見る
+              </a>
             </div>
             <div className="mt-2 text-sm text-gray-700">
               <p>価格: {item.price ? `${item.price.toLocaleString()}円` : '―'}</p>
               <p>
-                ドロップ回数: {item.dropRate}
+                ドロップ回数: {item.dropRate ?? '―'}
                 {typeof item.dropRateDiff === 'number' &&
                   (item.dropRateDiff > 0
                     ? ` ↑${item.dropRateDiff}`
@@ -91,7 +109,7 @@ const RankingSection = ({ items }: { items: ProductItem[] }) => {
                     ? ` ↓${Math.abs(item.dropRateDiff)}`
                     : '')}
               </p>
-              <p>スコア: {typeof item.score === 'number' && item.score > 0 ? item.score : '―'}</p>
+              <p>スコア: {item.score && item.score > 0 ? item.score : '―'}</p>
             </div>
           </div>
         </div>
@@ -101,32 +119,33 @@ const RankingSection = ({ items }: { items: ProductItem[] }) => {
 };
 
 export default function ProteinRankingPage() {
-  const [activeTab, setActiveTab] = useState('whey');
+  const [activeTab, setActiveTab] = useState<'whey' | 'soy' | 'isolate'>('whey');
   const [wheyItems, setWheyItems] = useState<ProductItem[]>([]);
   const [soyItems, setSoyItems] = useState<ProductItem[]>([]);
   const [isolateItems, setIsolateItems] = useState<ProductItem[]>([]);
 
   useEffect(() => {
-    fetch('/api/ranking?type=whey&sort=score')
+    fetch('/api/ranking?type=whey&sort=score', { cache: 'no-store' })
       .then(res => res.json())
-      .then(data => setWheyItems(data));
-    fetch('/api/ranking?type=soy&sort=score')
+      .then(data => setWheyItems(data || []));
+    fetch('/api/ranking?type=soy&sort=score', { cache: 'no-store' })
       .then(res => res.json())
-      .then(data => setSoyItems(data));
-    fetch('/api/ranking?type=isolate&sort=score')
+      .then(data => setSoyItems(data || []));
+    fetch('/api/ranking?type=isolate&sort=score', { cache: 'no-store' })
       .then(res => res.json())
-      .then(data => setIsolateItems(data));
+      .then(data => setIsolateItems(data || []));
   }, []);
 
-  const getItems = () => {
-    if (activeTab === 'soy') return soyItems;
-    if (activeTab === 'isolate') return isolateItems;
-    return wheyItems;
-  };
+  const items = activeTab === 'soy' ? soyItems : activeTab === 'isolate' ? isolateItems : wheyItems;
+  const periodLabel = useMemo(() => fmtRangeFromItems(items, '直近30日'), [items]);
 
   return (
     <main className="max-w-4xl mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-4 text-center">2025年5月 プロテイン ランキング</h1>
+      <h1 className="text-3xl font-bold mb-1 text-center">
+        {periodLabel} プロテイン ランキング
+      </h1>
+      <p className="text-xs text-gray-500 text-center mb-6">（A方式：直近30日更新ぶん）</p>
+
       <p className="text-sm text-gray-500 text-center mb-6">
         <Link href="/about#score" className="underline hover:text-green-700">
           SuppBaseスコアとは？
@@ -137,7 +156,7 @@ export default function ProteinRankingPage() {
         {tabs.map(tab => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => setActiveTab(tab.id as 'whey' | 'soy' | 'isolate')}
             className={`px-4 py-2 rounded-full border font-medium transition ${
               activeTab === tab.id
                 ? 'bg-green-600 text-white border-green-600'
@@ -149,7 +168,7 @@ export default function ProteinRankingPage() {
         ))}
       </div>
 
-      <RankingSection items={getItems()} />
+      <RankingSection items={items} />
     </main>
   );
 }
