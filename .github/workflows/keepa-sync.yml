@@ -1,18 +1,36 @@
 name: Keepa to Supabase sync
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      max_pages:
+        description: "Max pages for /deal"
+        required: false
+        default: "250"
+      max_minutes:
+        description: "Max minutes per scrape job"
+        required: false
+        default: "60"
   schedule:
-    - cron: "0 17 * * *"  # JST 02:00 (UTC 17:00)
+    # JST 02:00（UTC 17:00）
+    - cron: "0 17 * * *"
 
 concurrency:
   group: keepa-supabase-sync
   cancel-in-progress: false
 
+env:
+  PYTHONUNBUFFERED: "1"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  # スクレイプの上限（workflow_dispatch なら上書き可）
+  MAX_PAGES: ${{ inputs.max_pages || '250' }}
+  MAX_MINUTES: ${{ inputs.max_minutes || '60' }}
+
 jobs:
-  run-scrapers:
+  protein:
+    name: Scrape Protein deals & details
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 240
 
     steps:
       - name: Checkout
@@ -26,87 +44,77 @@ jobs:
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
-          pip install requests pandas python-dateutil psycopg2-binary supabase
+          pip install requests supabase
 
       - name: Prepare data dir
         run: mkdir -p data
 
-      # ==== Protein ASINs ====
-      - name: Run fetch_keepa.py
+      - name: Run fetch_filtered_deals.py (protein /deal → ASIN + priceDrops)
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
-        run: python scripts/fetch_keepa.py
-
-      - name: Prepare protein asin list
         run: |
-          set -eux
-          if [ -f protein_asins_deals_filtered.json ]; then
-            mv protein_asins_deals_filtered.json data/asins_protein_jp.json
-          elif [ -f scripts/protein_asins_deals_filtered.json ]; then
-            mv scripts/protein_asins_deals_filtered.json data/asins_protein_jp.json
-          fi
-          test -s data/asins_protein_jp.json || { echo "ASIN list empty: data/asins_protein_jp.json"; exit 1; }
+          python scripts/fetch_filtered_deals.py
+        # 生成物:
+        # - protein_asins_deals_filtered.json
+        # - data/deal_price_drops_protein.json
 
-      - name: Debug protein asin count
+      - name: Build protein details (product stats/rating)
+        env:
+          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+          ASIN_LIST_FILE: protein_asins_deals_filtered.json
+          OUT_PRODUCT: product_details.json
         run: |
-          python -c "import json;print('protein asins count =',len(json.load(open('data/asins_protein_jp.json','r',encoding='utf-8'))))"
+          # 修正版（stats=1, rating=1, buybox=1）がリポジトリに入っている前提
+          python scripts/fetch_product_details.py
 
-      # ==== Supplement ASINs (resume-friendly) ====
-      - name: Download supplement checkpoint (if exists)
-        uses: actions/download-artifact@v4
+      - name: Upload artifacts (protein)
+        uses: actions/upload-artifact@v4
         with:
-          name: asins-supplements-jp
-          path: data
-        continue-on-error: true
+          name: protein-json
+          path: |
+            protein_asins_deals_filtered.json
+            product_details.json
+            data/deal_price_drops_protein.json
+          if-no-files-found: warn
 
-      - name: Run fetch_keepa_supplement.py (resume friendly)
+  supplements:
+    name: Scrape Supplements deals & details
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests supabase
+
+      - name: Prepare data dir
+        run: mkdir -p data
+
+      - name: Resume-able fetch_keepa_supplement.py (ASIN + priceDrops)
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
         run: |
           python scripts/fetch_keepa_supplement.py \
             --market jp \
-            --max-pages 300 \
-            --max-minutes 45 \
+            --max-pages $MAX_PAGES \
+            --max-minutes $MAX_MINUTES \
             --checkpoint data/asins_supplements_jp.json \
             --min-rating 3.8 \
             --min-reviews 40
+        # 生成物:
+        # - data/asins_supplements_jp.json
+        # - data/deal_price_drops_supplements.json
 
-      - name: Upload supplement checkpoint
-        uses: actions/upload-artifact@v4
-        with:
-          name: asins-supplements-jp
-          path: data/asins_supplements_jp.json
-          overwrite: true
-          if-no-files-found: ignore
-
-      - name: Debug supplement asin count
-        run: python scripts/debug_supp_asin_count.py
-
-      # ==== Details (resume-friendly) ====
-      - name: Download details checkpoint (if exists)
-        uses: actions/download-artifact@v4
-        with:
-          name: details-supplements-jp
-          path: data
-        continue-on-error: true
-
-      - name: Inspect data dir
-        run: |
-          echo "== data content ==" && ls -la data || true
-          echo "== head json =="; for f in data/*.json; do echo "--- $f"; head -n 3 "$f" || true; done
-
-      - name: Build product_details.json from protein ASIN list
-        env:
-          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
-          ASIN_LIST_FILE: data/asins_protein_jp.json
-          OUT_PRODUCT: product_details.json
-          OUT_SUPP_PRODUCT: supplement_product_details.json
-        run: |
-          echo "Protein details"
-          python scripts/fetch_product_details.py
-          ls -la product_details.json
-
-      - name: Build supplement_product_details.json
+      - name: Build supplement details
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
         run: |
@@ -114,31 +122,145 @@ jobs:
             --market jp \
             --asin-file data/asins_supplements_jp.json \
             --out supplement_product_details.json \
-            --checkpoint data/supplement_details_progress.json \
-            --max-asins 600 \
-            --max-minutes 40 \
-            --batch-size 100
-          ls -la supplement_product_details.json || true
+            --max-asins 800 \
+            --max-minutes $MAX_MINUTES
 
-      - name: Upload details checkpoint
+      - name: Upload artifacts (supplements)
         uses: actions/upload-artifact@v4
         with:
-          name: details-supplements-jp
+          name: supplement-json
           path: |
-            data/supplement_details_progress.json
+            data/asins_supplements_jp.json
+            data/deal_price_drops_supplements.json
             supplement_product_details.json
-          overwrite: true
-          if-no-files-found: ignore
+          if-no-files-found: warn
 
-      # ==== Debug: Secrets が届いているかだけチェック（中身は出ない）====
-      - name: Debug secrets presence
+  import-and-score:
+    name: Import to Supabase & update score
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    needs: [protein, supplements]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
         run: |
-          test -n "${{ secrets.SUPABASE_URL }}" && echo "SUPABASE_URL: set" || (echo "SUPABASE_URL: MISSING" && exit 1)
-          test -n "${{ secrets.SUPABASE_SERVICE_ROLE }}" && echo "SERVICE_ROLE: set" || (echo "SERVICE_ROLE: MISSING" && exit 1)
+          python -m pip install --upgrade pip
+          pip install supabase
 
-      # ==== Import to Supabase (REST / service_role) ====
-      - name: Run import_to_Supabase.py
+      - name: Download protein artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: protein-json
+          path: .
+
+      - name: Download supplement artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: supplement-json
+          path: .
+
+      - name: Show files (debug)
+        run: ls -al && ls -al data || true
+
+      - name: Import to Supabase (UPSERT + droprate=priceDrops + diff)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
-        run: python scripts/import_to_Supabase.py
+        run: |
+          # 修正版 import_to_Supabase.py（priceDrops統合・rating/reviewcount/score対応）を実行
+          python import_to_Supabase.py
+
+      - name: Write SQL (schema + score update + 30d views)
+        run: |
+          cat > update_score.sql <<'SQL'
+          -- ---- schema (idempotent) ----
+          create extension if not exists pg_trgm;
+
+          create table if not exists products (
+            asin           text primary key,
+            title          text not null,
+            brand          text,
+            buyboxprice    integer,
+            buyboxfallback integer,
+            salesrank      integer,
+            droprate       numeric,
+            droprateprev   numeric,
+            imageurl       text,
+            rating         numeric,
+            reviewcount    integer,
+            score          numeric,
+            updated_at     timestamptz not null default now()
+          );
+
+          alter table products add column if not exists rating numeric;
+          alter table products add column if not exists reviewcount integer;
+          alter table products add column if not exists score numeric;
+          alter table products add column if not exists updated_at timestamptz not null default now();
+
+          create index if not exists idx_products_updated_at on products(updated_at desc);
+          create index if not exists idx_products_title_trgm on products using gin (title gin_trgm_ops);
+
+          -- ---- score (0-100) ----
+          with stats as (
+            select
+              min(droprate)    as min_drop, max(droprate)    as max_drop,
+              min(salesrank)   as min_rank, max(salesrank)   as max_rank,
+              min(reviewcount) as min_rev,  max(reviewcount) as max_rev,
+              min(rating)      as min_rt,   max(rating)      as max_rt
+            from products
+          ),
+          normed as (
+            select
+              p.asin,
+              case when s.max_drop>s.min_drop then (p.droprate    - s.min_drop)/(s.max_drop-s.min_drop) else 0 end as n_drop,
+              case when s.max_rank>s.min_rank then 1-(coalesce(p.salesrank, s.max_rank) - s.min_rank)/(s.max_rank-s.min_rank) else 0 end as n_rank,
+              case when s.max_rev>s.min_rev   then (coalesce(p.reviewcount,0) - s.min_rev)/(s.max_rev - s.min_rev) else 0 end as n_rev,
+              case when s.max_rt>s.min_rt     then (coalesce(p.rating,0)     - s.min_rt)/(s.max_rt - s.min_rt) else 0 end as n_rt
+            from products p cross join stats s
+          )
+          update products p
+          set score = round(
+            100*(0.40*coalesce(n.n_drop,0)
+               +0.30*coalesce(n.n_rank,0)
+               +0.20*coalesce(n.n_rev ,0)
+               +0.10*coalesce(n.n_rt  ,0)), 1)
+          from normed n
+          where p.asin = n.asin;
+
+          -- ---- A方式：直近30日だけ ----
+          drop view if exists v_products_recent_30d cascade;
+          create view v_products_recent_30d as
+          select * from products
+          where updated_at >= now() - interval '30 days';
+
+          -- Whey / WPI の簡易分類（タイトル基準）
+          drop view if exists v_rank_whey_30d cascade;
+          create view v_rank_whey_30d as
+          select *
+          from v_products_recent_30d
+          where (title ilike '%ホエイ%' or title ilike '%whey%')
+            and not (title ilike '%WPI%' or title ilike '%アイソレート%' or title ilike '%isolate%');
+
+          drop view if exists v_rank_wpi_30d cascade;
+          create view v_rank_wpi_30d as
+          select *
+          from v_products_recent_30d
+          where (title ilike '%WPI%' or title ilike '%アイソレート%' or title ilike '%isolate%');
+          SQL
+
+      - name: Run SQL on Supabase (psql)
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          docker run --rm -i ghcr.io/postgresml/psql:16-alpine \
+            -v $PWD/update_score.sql:/update_score.sql \
+            --env PSQL_NON_INTERACTIVE=1 \
+            bash -lc "psql '${SUPABASE_DB_URL}' -v ON_ERROR_STOP=1 -f /update_score.sql"
