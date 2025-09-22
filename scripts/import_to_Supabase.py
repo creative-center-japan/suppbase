@@ -21,11 +21,11 @@ def to_row(p: Dict[str, Any]) -> Dict[str, Any]:
     title = p.get("title")
     brand = p.get("brand")
 
-    # buyBoxPrice はセント表現のことがあるので、そのまま数値で入れる（表示側で/100考慮）
+    # buyBoxPrice はセント表現のことがあるので、そのまま入れてフロントで/100
     buyBoxPrice = p.get("buyBoxPrice")
     buyBoxFallback = p.get("buyBoxFallback")
 
-    # salesRank はソースによりキーが違うので両対応
+    # salesRank（両形式に対応）
     salesRank = p.get("salesRank")
     if salesRank is None:
         ranks = (p.get("salesRanks") or {}).get("0")
@@ -40,7 +40,11 @@ def to_row(p: Dict[str, Any]) -> Dict[str, Any]:
             image_id = images_csv.split(",")[0]
             imageUrl = f"https://images-na.ssl-images-amazon.com/images/I/{image_id}.jpg"
 
-    # DBのカラムと合わせて小文字スネークケースに統一
+    # 追加：rating / reviewcount / score
+    rating = p.get("rating")
+    reviewcount = p.get("reviewCount") if "reviewCount" in p else p.get("reviewcount")
+    score = p.get("score")  # 事前計算してある場合のみ。通常はNULL → 後段SQLで更新
+
     return {
         "asin": asin,
         "title": title,
@@ -51,6 +55,9 @@ def to_row(p: Dict[str, Any]) -> Dict[str, Any]:
         "droprate": p.get("dropRate") or 0,
         "droprateprev": p.get("dropRatePrev") or 0,
         "imageurl": imageUrl or "",
+        "rating": rating,
+        "reviewcount": reviewcount,
+        "score": score,
     }
 
 def load_products(files: List[str]) -> List[Dict[str, Any]]:
@@ -97,7 +104,6 @@ def main() -> None:
     key = os.environ.get("SUPABASE_SERVICE_ROLE")
     if not url or not key:
         raise RuntimeError("SUPABASE_URL / SUPABASE_SERVICE_ROLE が未設定です。"
-
                            "（SupabaseのProject settings → APIで確認し、"
                            "GitHub Secrets に登録してください）")
 
