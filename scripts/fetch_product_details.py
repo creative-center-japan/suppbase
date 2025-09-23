@@ -3,7 +3,7 @@ import os, json, time, requests
 from typing import List, Dict, Any
 
 API_KEY = os.environ.get("KEEPA_API_KEY", "")
-DOMAIN_ID = 5  # Japan
+DOMAIN_ID = 5  # Amazon JP
 
 ASIN_LIST_FILE = os.environ.get("ASIN_LIST_FILE", "protein_asins_deals_filtered.json")
 OUT_PRODUCT = os.environ.get("OUT_PRODUCT", "product_details.json")
@@ -25,7 +25,6 @@ def map_product(p: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(buy_box_price, (int, float)) and buy_box_price < 0:
         buy_box_price = None
 
-    # salesRank は product直下が無い場合もあるので保険
     sales_rank = p.get("salesRank")
     if sales_rank is None:
         ranks = (p.get("salesRanks") or {}).get("0")
@@ -36,10 +35,10 @@ def map_product(p: Dict[str, Any]) -> Dict[str, Any]:
         "asin": p.get("asin"),
         "title": p.get("title") or "Unknown",
         "brand": p.get("brand"),
-        "buyBoxPrice": buy_box_price,          # 表示側で/100
+        "buyBoxPrice": buy_box_price,          # 表示側で/100円換算
         "buyBoxFallback": None,
         "salesRank": sales_rank,
-        "dropRate": None,                      # ここでは未算出（将来拡張）
+        "dropRate": None,                      # ここでは未算出
         "dropRatePrev": None,
         "imageUrl": image_url_from_csv(p.get("imagesCSV")),
         "rating": stats.get("rating"),
@@ -50,15 +49,15 @@ def fetch_products(asins: List[str]) -> List[Dict[str, Any]]:
     if not API_KEY:
         raise RuntimeError("KEEPA_API_KEY が未設定です。")
     results: List[Dict[str, Any]] = []
-    for group in chunk(asins, 100):
+    for group in chunk(asins, 100):  # Keepaは最大100ASIN/req
         params = {
             "key": API_KEY,
             "domain": DOMAIN_ID,
             "asin": ",".join(group),
-            "history": 0,
-            "rating": 1,
-            "stats": 1,
-            "buybox": 1,
+            "history": 0,   # 軽量化
+            "rating": 1,    # ★ レビュー系を返す
+            "stats": 1,     # ★ buyBoxPrice / rating / reviewCount
+            "buybox": 1,    # （保険）
         }
         r = requests.get(KEEPA_PRODUCT_URL, params=params, timeout=60)
         if r.status_code == 429:
