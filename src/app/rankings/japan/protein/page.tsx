@@ -1,8 +1,6 @@
-// src/app/rankings/japan/protein/page.tsx
-
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 
@@ -23,31 +21,11 @@ type ProductItem = {
   dropRateDiff: number | null;
   score: number | null;
   affiliateUrl: string;
-  /** ★ APIが返すことを想定（DBのupdated_atをそのまま） */
-  updatedAt?: string; // ISO e.g. "2025-09-21T10:23:45.123Z"
 };
-
-function fmtRangeFromItems(items: ProductItem[], fallback = '直近30日') {
-  if (!items?.length) return fallback;
-  const dates = items
-    .map(i => (i.updatedAt ? new Date(i.updatedAt) : null))
-    .filter((d): d is Date => d instanceof Date && !isNaN(+d));
-  if (!dates.length) return fallback;
-
-  const min = new Date(Math.min(...dates.map(d => +d)));
-  const max = new Date(Math.max(...dates.map(d => +d)));
-
-  // 同じ年月なら「YYYY年M月」
-  if (min.getUTCFullYear() === max.getUTCFullYear() && min.getUTCMonth() === max.getUTCMonth()) {
-    return `${max.getUTCFullYear()}年${max.getUTCMonth() + 1}月`;
-  }
-  // 月をまたいでいたら「M/D〜M/D」
-  const mmdd = (d: Date) => `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
-  return `${mmdd(min)}〜${mmdd(max)}`;
-}
 
 const RankingSection = ({ items }: { items: ProductItem[] }) => {
   if (!items.length) return <p className="text-center text-gray-400">ランキング読み込み中...</p>;
+
   return (
     <div className="space-y-4">
       {items.map(item => (
@@ -123,6 +101,16 @@ export default function ProteinRankingPage() {
   const [wheyItems, setWheyItems] = useState<ProductItem[]>([]);
   const [soyItems, setSoyItems] = useState<ProductItem[]>([]);
   const [isolateItems, setIsolateItems] = useState<ProductItem[]>([]);
+  const [titleMonth, setTitleMonth] = useState<string>('');
+
+  useEffect(() => {
+    const fmt = new Intl.DateTimeFormat('ja-JP', {
+      year: 'numeric',
+      month: 'long',
+      timeZone: 'Asia/Tokyo',
+    });
+    setTitleMonth(fmt.format(new Date()));
+  }, []);
 
   useEffect(() => {
     fetch('/api/ranking?type=whey&sort=score', { cache: 'no-store' })
@@ -137,15 +125,12 @@ export default function ProteinRankingPage() {
   }, []);
 
   const items = activeTab === 'soy' ? soyItems : activeTab === 'isolate' ? isolateItems : wheyItems;
-  const periodLabel = useMemo(() => fmtRangeFromItems(items, '直近30日'), [items]);
 
   return (
     <main className="max-w-4xl mx-auto px-4 py-8">
       <h1 className="text-3xl font-bold mb-1 text-center">
-        {periodLabel} プロテイン ランキング
+        {titleMonth ? `${titleMonth} プロテイン ランキング` : 'プロテイン ランキング'}
       </h1>
-      <p className="text-xs text-gray-500 text-center mb-6">（A方式：直近30日更新ぶん）</p>
-
       <p className="text-sm text-gray-500 text-center mb-6">
         <Link href="/about#score" className="underline hover:text-green-700">
           SuppBaseスコアとは？

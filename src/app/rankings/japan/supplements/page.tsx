@@ -1,7 +1,6 @@
-// src/app/rankings/japan/supplements/page.tsx
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 
@@ -21,27 +20,12 @@ type ProductItem = {
   dropRateDiff: number | null;
   score: number | null;
   affiliateUrl: string;
-  updatedAt?: string; // ★
 };
-
-function fmtRangeFromItems(items: ProductItem[], fallback = '直近30日') {
-  if (!items?.length) return fallback;
-  const ds = items
-    .map(i => (i.updatedAt ? new Date(i.updatedAt) : null))
-    .filter((d): d is Date => d instanceof Date && !isNaN(+d));
-  if (!ds.length) return fallback;
-  const min = new Date(Math.min(...ds.map(d => +d)));
-  const max = new Date(Math.max(...ds.map(d => +d)));
-  if (min.getUTCFullYear() === max.getUTCFullYear() && min.getUTCMonth() === max.getUTCMonth()) {
-    return `${max.getUTCFullYear()}年${max.getUTCMonth() + 1}月`;
-  }
-  const md = (d: Date) => `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
-  return `${md(min)}〜${md(max)}`;
-}
 
 const RankingSection = ({ items, loading }: { items: ProductItem[]; loading: boolean }) => {
   if (loading) return <p className="text-center text-gray-400">ランキング読み込み中...</p>;
   if (!items.length) return <p className="text-center text-gray-400">データがありません</p>;
+
   return (
     <div className="space-y-4">
       {items.map(item => (
@@ -118,6 +102,16 @@ export default function SupplementRankingPage() {
   const [eaaItems,  setEaaItems]  = useState<ProductItem[]>([]);
   const [loading,   setLoading]    = useState({ bcaa: true, eaa: true });
   const [error,     setError]      = useState<string | null>(null);
+  const [titleMonth, setTitleMonth] = useState<string>('');
+
+  useEffect(() => {
+    const fmt = new Intl.DateTimeFormat('ja-JP', {
+      year: 'numeric',
+      month: 'long',
+      timeZone: 'Asia/Tokyo',
+    });
+    setTitleMonth(fmt.format(new Date()));
+  }, []);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -142,15 +136,13 @@ export default function SupplementRankingPage() {
   }, []);
 
   const items = activeTab === 'eaa' ? eaaItems : bcaaItems;
-  const periodLabel = useMemo(() => fmtRangeFromItems(items, '直近30日'), [items]);
+  const isLoading = activeTab === 'eaa' ? loading.eaa : loading.bcaa;
 
   return (
     <main className="max-w-4xl mx-auto px-4 py-8">
       <h1 className="text-3xl font-bold mb-1 text-center">
-        {periodLabel} サプリメント ランキング
+        {titleMonth ? `${titleMonth} サプリメント ランキング` : 'サプリメント ランキング'}
       </h1>
-      <p className="text-xs text-gray-500 text-center mb-6">（A方式：直近30日更新ぶん）</p>
-
       <p className="text-sm text-gray-500 text-center mb-6">
         <Link href="/about#score" className="underline hover:text-green-700">
           SuppBaseスコアとは？
@@ -174,7 +166,7 @@ export default function SupplementRankingPage() {
       </div>
 
       {error && <p className="text-center text-red-500 mb-4">{error}</p>}
-      <RankingSection items={items} loading={activeTab === 'eaa' ? loading.eaa : loading.bcaa} />
+      <RankingSection items={items} loading={isLoading} />
     </main>
   );
 }
