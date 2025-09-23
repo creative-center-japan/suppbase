@@ -253,11 +253,13 @@ jobs:
           where (title ilike '%WPI%' or title ilike '%アイソレート%' or title ilike '%isolate%');
           SQL
 
-      - name: Run SQL on Supabase (psql)
+      - name: Install psql client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Run SQL on Supabase
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
-          docker run --rm -i ghcr.io/postgresml/psql:16-alpine \
-            -v $PWD/update_score.sql:/update_score.sql \
-            --env PSQL_NON_INTERACTIVE=1 \
-            bash -lc "psql '${SUPABASE_DB_URL}' -v ON_ERROR_STOP=1 -f /update_score.sql"
+          psql "${SUPABASE_DB_URL}" -v ON_ERROR_STOP=1 -f update_score.sql
