@@ -157,35 +157,27 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: protein-json
-        # path 省略→カレントに展開
+          path: .
 
       - name: Download supplement artifacts
         uses: actions/download-artifact@v4
         with:
           name: supplement-json
+          path: .
 
       - name: Show files (debug)
         run: |
           echo "== pwd ==" && pwd
           echo "== repo root ==" && ls -al
-          echo "== scripts dir ==" && ls -al scripts || true
-          echo "== data dir ==" && ls -al data || true
-          echo "== search import_to_Supabase.py =="
-          find . -maxdepth 3 -type f -iname 'import_to_supabase.py' -print
+          echo "== scripts dir ==" && (ls -al scripts || true)
+          echo "== data dir ==" && (ls -al data || true)
 
       - name: Import to Supabase (UPSERT + droprate=priceDrops + diff)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
         run: |
-          set -euo pipefail
-          PY="$(find . -maxdepth 3 -type f -iname 'import_to_supabase.py' | head -n1 || true)"
-          if [ -z "$PY" ]; then
-            echo "[x] import_to_Supabase.py が見つかりません。repo直下 or scripts/ に置いてください。"
-            exit 2
-          fi
-          echo "[i] using: $PY"
-          python "$PY"
+          python scripts/import_to_Supabase.py
 
       - name: Write SQL (schema + score update + 30d views)
         run: |
