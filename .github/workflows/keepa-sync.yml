@@ -243,18 +243,29 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client
 
-      # ===== ここから Pooler を使用 =====
+      # ==== ここから: Session pooler に“項目別”で接続（URLエンコード不要） ====
       - name: Debug DB connection (Session pooler)
         env:
-          SUPABASE_DB_URL_POOLER: ${{ secrets.SUPABASE_DB_URL_POOLER }}
+          SB_HOST_POOLER: ${{ secrets.SB_HOST_POOLER }}
+          SB_PORT_POOLER: ${{ secrets.SB_PORT_POOLER }}
+          SB_DBNAME: ${{ secrets.SB_DBNAME }}
+          SB_DBUSER: ${{ secrets.SB_DBUSER }}
+          SB_DBPASS: ${{ secrets.SB_DBPASS }}
         run: |
           set -euxo pipefail
+          export PGPASSWORD="$SB_DBPASS"
           psql --version
-          psql "${SUPABASE_DB_URL_POOLER}" -c '\conninfo'
+          psql "host=$SB_HOST_POOLER port=$SB_PORT_POOLER dbname=$SB_DBNAME user=$SB_DBUSER sslmode=require" -c '\conninfo'
 
       - name: Run SQL on Supabase (Session pooler)
         env:
-          SUPABASE_DB_URL_POOLER: ${{ secrets.SUPABASE_DB_URL_POOLER }}
+          SB_HOST_POOLER: ${{ secrets.SB_HOST_POOLER }}
+          SB_PORT_POOLER: ${{ secrets.SB_PORT_POOLER }}
+          SB_DBNAME: ${{ secrets.SB_DBNAME }}
+          SB_DBUSER: ${{ secrets.SB_DBUSER }}
+          SB_DBPASS: ${{ secrets.SB_DBPASS }}
         run: |
           set -euxo pipefail
-          psql "${SUPABASE_DB_URL_POOLER}" -v ON_ERROR_STOP=1 -f update_score.sql
+          export PGPASSWORD="$SB_DBPASS"
+          psql "host=$SB_HOST_POOLER port=$SB_PORT_POOLER dbname=$SB_DBNAME user=$SB_DBUSER sslmode=require" \
+            -v ON_ERROR_STOP=1 -f update_score.sql
