@@ -118,7 +118,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: supplement-json
-        path: |
+          path: |
             data/asins_supplements_jp.json
             data/deal_price_drops_supplements.json
             supplement_product_details.json
@@ -275,7 +275,7 @@ jobs:
           export PGPASSWORD="$CLEAN_PASS"
           psql --version
           echo "Connecting to $SB_HOST_POOLER:$SB_PORT_POOLER as $SB_DBUSER / db=$SB_DBNAME"
-          psql "host=$SB_HOST_POOLER port=$SB_PORT_POOLER dbname=$SB_DBNAME user=$SB_DBUSER sslmode=require" -c '\conninfo' || true
+          psql "host=$SB_HOST_POOLER port=$SB_PORT_POOLER dbname=$SB_DBNAME user=$SB_DBUSER sslmode=require" -c '\conninfo' | sed 's/password=.*/password=****/g' || true
           psql "host=$SB_HOST_POOLER port=$SB_PORT_POOLER dbname=$SB_DBNAME user=$SB_DBUSER sslmode=require" -c 'select current_user;' || true
 
           # 4) DNS解決を固定して再試行（切り分け）
