@@ -33,26 +33,21 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
           pip install requests supabase
-
       - name: Prepare data dir
         run: mkdir -p data
-
       - name: Run fetch_filtered_deals.py (protein /deal → ASIN + priceDrops)
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
         run: |
           python scripts/fetch_filtered_deals.py
-
       - name: Build protein details (product stats/rating)
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
@@ -60,7 +55,6 @@ jobs:
           OUT_PRODUCT: product_details.json
         run: |
           python scripts/fetch_product_details.py
-
       - name: Upload artifacts (protein)
         uses: actions/upload-artifact@v4
         with:
@@ -78,20 +72,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
           pip install requests supabase
-
       - name: Prepare data dir
         run: mkdir -p data
-
       - name: Resume-able fetch_keepa_supplement.py (ASIN + priceDrops)
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
@@ -103,7 +93,6 @@ jobs:
             --checkpoint data/asins_supplements_jp.json \
             --min-rating 3.8 \
             --min-reviews 40
-
       - name: Build supplement details
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
@@ -114,7 +103,6 @@ jobs:
             --out supplement_product_details.json \
             --max-asins 800 \
             --max-minutes $MAX_MINUTES
-
       - name: Upload artifacts (supplements)
         uses: actions/upload-artifact@v4
         with:
@@ -130,6 +118,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     needs: [protein, supplements]
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -254,17 +243,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client
 
-      - name: Debug DB connection
+      # ===== ここから Pooler を使用 =====
+      - name: Debug DB connection (Session pooler)
         env:
-          SUPABASE_DB_URL_DIRECT: ${{ secrets.SUPABASE_DB_URL_DIRECT }}
+          SUPABASE_DB_URL_POOLER: ${{ secrets.SUPABASE_DB_URL_POOLER }}
         run: |
           set -euxo pipefail
           psql --version
-          psql "${SUPABASE_DB_URL_DIRECT}" -c '\conninfo'
+          psql "${SUPABASE_DB_URL_POOLER}" -c '\conninfo'
 
-      - name: Run SQL on Supabase
+      - name: Run SQL on Supabase (Session pooler)
         env:
-          SUPABASE_DB_URL_DIRECT: ${{ secrets.SUPABASE_DB_URL_DIRECT }}
+          SUPABASE_DB_URL_POOLER: ${{ secrets.SUPABASE_DB_URL_POOLER }}
         run: |
           set -euxo pipefail
-          psql "${SUPABASE_DB_URL_DIRECT}" -v ON_ERROR_STOP=1 -f update_score.sql
+          psql "${SUPABASE_DB_URL_POOLER}" -v ON_ERROR_STOP=1 -f update_score.sql
