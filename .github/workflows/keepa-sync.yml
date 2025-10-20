@@ -253,42 +253,29 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client
 
-      # ===== Debug: wait + clean password + CA verify + retry (hostname/SNI) =====
       - name: Debug DB connection (Session pooler)
         env:
-          SB_HOST_POOLER: ${{ secrets.SB_HOST_POOLER }}   # aws-0-ap-southeast-1.pooler.supabase.com
-          SB_PORT_POOLER: ${{ secrets.SB_PORT_POOLER }}   # 5432
-          SB_DBNAME: ${{ secrets.SB_DBNAME }}             # postgres
-          SB_DBUSER: ${{ secrets.SB_DBUSER }}             # postgres.<project-ref>
-          SB_DBPASS: ${{ secrets.SB_DBPASS }}             # Database password
+          SB_HOST_POOLER: ${{ secrets.SB_HOST_POOLER }}
+          SB_PORT_POOLER: ${{ secrets.SB_PORT_POOLER }}
+          SB_DBNAME: ${{ secrets.SB_DBNAME }}
+          SB_DBUSER: ${{ secrets.SB_DBUSER }}
+          SB_DBPASS: ${{ secrets.SB_DBPASS }}
         run: |
           set -euxo pipefail
-
-          # wait for password propagation
           sleep 90
-
-          # strip CR/LF & trailing spaces
           CLEAN_PASS="$(printf "%s" "$SB_DBPASS" | tr -d '\r\n' | sed 's/[[:space:]]*$//')"
           echo "Password length (after clean): ${#CLEAN_PASS}"
-
-          CACERT="/etc/ssl/certs/ca-certificates.crt"
-          ls -l "$CACERT" || true
-
           export PGPASSWORD="$CLEAN_PASS"
           psql --version
           echo "Connecting (hostname/SNI) -> $SB_HOST_POOLER:$SB_PORT_POOLER as $SB_DBUSER db=$SB_DBNAME"
-
-          # retry up to 3 times with verify-full
           for i in 1 2 3; do
             echo "try #$i"
-            if psql "host=$SB_HOST_POOLER port=$SB_PORT_POOLER dbname=$SB_DBNAME user=$SB_DBUSER sslmode=verify-full sslrootcert=$CACERT" -c '\conninfo'; then
+            if psql "host=$SB_HOST_POOLER port=$SB_PORT_POOLER dbname=$SB_DBNAME user=$SB_DBUSER sslmode=require" -c '\conninfo'; then
               break
             fi
             sleep 5
           done
-
-          # also fetch current_user
-          psql "host=$SB_HOST_POOLER port=$SB_PORT_POOLER dbname=$SB_DBNAME user=$SB_DBUSER sslmode=verify-full sslrootcert=$CACERT" -c 'select current_user;'
+          psql "host=$SB_HOST_POOLER port=$SB_PORT_POOLER dbname=$SB_DBNAME user=$SB_DBUSER sslmode=require" -c 'select current_user;'
 
       - name: Run SQL on Supabase (Session pooler)
         env:
@@ -300,6 +287,5 @@ jobs:
         run: |
           set -euxo pipefail
           export PGPASSWORD="$(printf "%s" "$SB_DBPASS" | tr -d '\r\n' | sed 's/[[:space:]]*$//')"
-          CACERT="/etc/ssl/certs/ca-certificates.crt"
-          psql "host=$SB_HOST_POOLER port=$SB_PORT_POOLER dbname=$SB_DBNAME user=$SB_DBUSER sslmode=verify-full sslrootcert=$CACERT" \
+          psql "host=$SB_HOST_POOLER port=$SB_PORT_POOLER dbname=$SB_DBNAME user=$SB_DBUSER sslmode=require" \
             -v ON_ERROR_STOP=1 -f update_score.sql
