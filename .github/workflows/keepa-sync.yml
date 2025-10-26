@@ -41,12 +41,11 @@ jobs:
 
       - name: Install deps
         run: |
-            python -m pip install --upgrade pip
-            pip install "supabase>=2.4.0" requests
+          python -m pip install --upgrade pip
+          pip install "supabase>=2.4.0" requests
 
       - name: Prepare data dir
-        run: |
-          mkdir -p data
+        run: mkdir -p data
 
       - name: Run fetch_filtered_deals.py (protein /deal → ASIN + priceDrops)
         env:
@@ -54,8 +53,8 @@ jobs:
         run: |
           python scripts/fetch_filtered_deals.py
         # generates:
-        #   - protein_asins_deals_filtered.json
-        #   - data/deal_price_drops_protein.json
+        # - protein_asins_deals_filtered.json
+        # - data/deal_price_drops_protein.json
 
       - name: Build protein details (product stats/rating)
         env:
@@ -63,12 +62,7 @@ jobs:
           ASIN_LIST_FILE: protein_asins_deals_filtered.json
           OUT_PRODUCT: product_details.json
         run: |
-          python scripts/fetch_supplement_product_details.py \
-            --market jp \
-            --asin-file "${ASIN_LIST_FILE}" \
-            --out "${OUT_PRODUCT}" \
-            --max-asins 800 \
-            --max-minutes $MAX_MINUTES
+          python scripts/fetch_product_details.py
 
       - name: Upload artifacts (protein)
         uses: actions/upload-artifact@v4
@@ -99,8 +93,7 @@ jobs:
           pip install "supabase>=2.4.0" requests
 
       - name: Prepare data dir
-        run: |
-          mkdir -p data
+        run: mkdir -p data
 
       - name: Resume-able fetch_keepa_supplement.py (ASIN + priceDrops)
         env:
@@ -114,8 +107,8 @@ jobs:
             --min-rating 3.8 \
             --min-reviews 40
         # generates:
-        #   - data/asins_supplements_jp.json
-        #   - data/deal_price_drops_supplements.json
+        # - data/asins_supplements_jp.json
+        # - data/deal_price_drops_supplements.json
 
       - name: Build supplement details
         env:
@@ -124,7 +117,7 @@ jobs:
           python scripts/fetch_supplement_product_details.py \
             --market jp \
             --asin-file data/asins_supplements_jp.json \
-            --out "supplement_product_details.json" \
+            --out supplement_product_details.json \
             --max-asins 800 \
             --max-minutes $MAX_MINUTES
 
@@ -188,7 +181,7 @@ jobs:
         run: |
           python scripts/import_to_Supabase.py
 
-      - name: Compute & update score via Supabase API (no psql)
+      - name: Compute & update score via Supabase API (UPDATE only)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
@@ -196,88 +189,66 @@ jobs:
           python - <<'PY'
           import os
           from math import isfinite
-          from typing import List, Dict, Optional
+          from typing import List, Optional
           from supabase import create_client
 
           url = os.environ["SUPABASE_URL"]
           key = os.environ["SUPABASE_SERVICE_ROLE"]
           supa = create_client(url, key)
 
-          # 1) pull all needed fields in pages
-          page = 0
-          size = 1000
+          # 1) 既存行のみ取得（必要列に限定）
+          page, size = 0, 1000
           rows: List[dict] = []
           while True:
-              resp = supa.table("products").select(
+              res = supa.table("products").select(
                   "asin, droprate, salesrank, reviewcount, rating"
               ).range(page*size, page*size + size - 1).execute()
-              batch = resp.data or []
-              if not batch:
-                  break
+              batch = res.data or []
+              if not batch: break
               rows.extend(batch)
-              if len(batch) < size:
-                  break
+              if len(batch) < size: break
               page += 1
 
-          # if nothing to do, exit early
           if not rows:
               print("updated scores: 0 (no rows)")
               raise SystemExit(0)
 
-          # 2) compute global min/max ignoring NULLs
-          def _vals(col: str):
-              vals = [r[col] for r in rows if r.get(col) is not None]
-              return vals if vals else []
+          # 2) min/max をメモリで集計
+          def _vals(col: str): return [r[col] for r in rows if r.get(col) is not None]
+          def _min(v): return min(v) if v else None
+          def _max(v): return max(v) if v else None
 
-          def _min(vals): return min(vals) if vals else None
-          def _max(vals): return max(vals) if vals else None
-
-          drops = _vals("droprate")
-          ranks = _vals("salesrank")
-          revs  = _vals("reviewcount")
-          rats  = _vals("rating")
+          drops = _vals("droprate");  ranks = _vals("salesrank")
+          revs  = _vals("reviewcount"); rats = _vals("rating")
 
           min_drop, max_drop = _min(drops), _max(drops)
           min_rank, max_rank = _min(ranks), _max(ranks)
           min_rev,  max_rev  = _min(revs),  _max(revs)
           min_rt,   max_rt   = _min(rats),  _max(rats)
 
-          def norm(x: Optional[float], lo: Optional[float], hi: Optional[float], invert=False, fallback: float = 0.0) -> float:
-              if x is None or (lo is None) or (hi is None) or (hi == lo):
-                  return 0.0
+          def norm(x: Optional[float], lo: Optional[float], hi: Optional[float], invert=False) -> float:
+              if x is None or lo is None or hi is None or hi == lo: return 0.0
               v = (x - lo) / (hi - lo)
-              if not isfinite(v):
-                  return 0.0
-              v = 1.0 - v if invert else v
-              if v < 0: v = 0.0
-              if v > 1: v = 1.0
-              return v
+              if not isfinite(v): return 0.0
+              if invert: v = 1.0 - v
+              return 0.0 if v < 0 else 1.0 if v > 1 else v
 
-          # 3) compute scores and upsert in chunks
-          batch: List[Dict] = []
-          total = 0
+          # 3) 既存行のみ UPDATE（INSERTしない）
+          updated, skipped = 0, 0
           for rec in rows:
-              d  = rec.get("droprate")
-              rk = rec.get("salesrank")
-              rv = rec.get("reviewcount")
-              rt = rec.get("rating")
+              asin = rec.get("asin")
+              if not asin: 
+                  skipped += 1
+                  continue
 
-              n_drop = norm(d,  min_drop, max_drop, invert=False, fallback=0.0)
-              n_rank = norm(rk, min_rank, max_rank, invert=True,  fallback=max_rank if max_rank is not None else 0.0)
-              n_rev  = norm(rv, min_rev,  max_rev,  invert=False, fallback=0.0)
-              n_rt   = norm(rt, min_rt,   max_rt,   invert=False, fallback=0.0)
+              n_drop = norm(rec.get("droprate"),   min_drop, max_drop, invert=False)
+              n_rank = norm(rec.get("salesrank"),  min_rank, max_rank, invert=True)
+              n_rev  = norm(rec.get("reviewcount"),min_rev,  max_rev,  invert=False)
+              n_rt   = norm(rec.get("rating"),     min_rt,   max_rt,   invert=False)
+              score  = round(100.0*(0.40*n_drop + 0.30*n_rank + 0.20*n_rev + 0.10*n_rt), 1)
 
-              score = round(100.0 * (0.40*n_drop + 0.30*n_rank + 0.20*n_rev + 0.10*n_rt), 1)
-              batch.append({"asin": rec["id"] if "id" in rec else rec["asin"], "score": score})
+              supa.table("products").update({"score": score}).eq("asin", asin).execute()
+              updated += 1
 
-              if len(batch) >= 500:
-                  supa.table("products").upsert(batch, on_conflict="asin").execute()
-                  total += len(batch)
-                  batch.clear()
-
-          if batch:
-              supa.table("products").upsert(batch, on_conflict="asin").execute()
-              total += len(batch)
-
-          print(f"updated scores: {total}")
+          print(f"updated scores: {updated}, skipped: {skipped}")
           PY
