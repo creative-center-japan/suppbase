@@ -1,4 +1,4 @@
-// healthy-site\src\app\api\ranking\route.ts
+// healthy-site/src/app/api/ranking/route.ts
 
 export const runtime = 'nodejs';
 import { NextRequest, NextResponse } from 'next/server';
@@ -16,25 +16,33 @@ function normalizeDbUrl(raw: string) {
   }
   return u;
 }
+
 function getPool() {
   if (_pool) return _pool;
   const url = normalizeDbUrl(process.env.DATABASE_URL!);
   console.log('DB host in use =>', url.host);
-  _pool = new Pool({ connectionString: url.toString(), ssl: { rejectUnauthorized: false } });
+  _pool = new Pool({
+    connectionString: url.toString(),
+    ssl: { rejectUnauthorized: false },
+  });
   return _pool;
 }
 
-// 共通：存在する方のカラムを選び、無ければ NULL を返すヘルパー
-function pickCol(cols: Set<string>, lower: string, camel: string, alias: string) {
+// lower（実際のカラム名）だけ見るように修正
+function pickCol(cols: Set<string>, lower: string, alias: string) {
   if (cols.has(lower)) return `"${lower}" AS ${alias}`;
-  if (cols.has(camel)) return `"${camel}" AS ${alias}`;
   return `NULL AS ${alias}`;
 }
 
 type ProductRow = {
-  asin: string; title: string; brand: string | null;
-  buyboxprice: number | null; buyboxfallback: number | null;
-  salesrank: number | null; droprate: number | null; droprateprev: number | null;
+  asin: string;
+  title: string;
+  brand: string | null;
+  buyboxprice: number | null;
+  buyboxfallback: number | null;
+  salesrank: number | null;
+  droprate: number | null;
+  droprateprev: number | null;
   imageurl: string | null;
 };
 
@@ -46,42 +54,54 @@ export async function GET(req: NextRequest) {
     const limit = Math.max(1, Math.min(100, Number(sp.get('limit') ?? '10')));
 
     let where = '';
-    if (type === 'whey') where = "WHERE title ILIKE '%ホエイ%' OR title ILIKE '%WPI%'";
-    else if (type === 'soy') where = "WHERE title ILIKE '%ソイ%'";
-    else if (type === 'isolate') where = "WHERE title ILIKE '%WPI%' OR title ILIKE '%アイソレート%'";
-    else if (type === 'bcaa') where = "WHERE title ILIKE '%BCAA%' OR title ILIKE '%bcaa%'";
-    else if (type === 'eaa') where = "WHERE title ILIKE '%EAA%' OR title ILIKE '%eaa%'";
-    else if (type === 'other') where = `
-      WHERE title NOT ILIKE '%ホエイ%' AND title NOT ILIKE '%WPI%' AND title NOT ILIKE '%ソイ%'
-        AND title NOT ILIKE '%アイソレート%' AND title NOT ILIKE '%BCAA%' AND title NOT ILIKE '%EAA%'
-        AND title NOT ILIKE '%bcaa%' AND title NOT ILIKE '%eaa%'`;
+    if (type === 'whey')
+      where = "WHERE title ILIKE '%ホエイ%' OR title ILIKE '%WPI%'";
+    else if (type === 'soy')
+      where = "WHERE title ILIKE '%ソイ%'";
+    else if (type === 'isolate')
+      where = "WHERE title ILIKE '%WPI%' OR title ILIKE '%アイソレート%'";
+    else if (type === 'bcaa')
+      where = "WHERE title ILIKE '%BCAA%' OR title ILIKE '%bcaa%'";
+    else if (type === 'eaa')
+      where = "WHERE title ILIKE '%EAA%' OR title ILIKE '%eaa%'";
+    else if (type === 'other')
+      where = `
+        WHERE title NOT ILIKE '%ホエイ%' AND title NOT ILIKE '%WPI%' AND title NOT ILIKE '%ソイ%'
+          AND title NOT ILIKE '%アイソレート%' AND title NOT ILIKE '%BCAA%' AND title NOT ILIKE '%EAA%'
+          AND title NOT ILIKE '%bcaa%' AND title NOT ILIKE '%eaa%'`;
 
     let order = 'ORDER BY droprate DESC';
-    if (sort === 'score') order = 'ORDER BY (COALESCE(droprate,0)*2 + (10000-COALESCE(salesrank,10000))) DESC';
-    else if (sort === 'sales') order = 'ORDER BY salesrank ASC NULLS LAST';
-    else if (sort === 'price') order = 'ORDER BY COALESCE(buyboxprice, buyboxfallback) ASC NULLS LAST';
+    if (sort === 'score')
+      order =
+        'ORDER BY (COALESCE(droprate,0)*2 + (10000-COALESCE(salesrank,10000))) DESC';
+    else if (sort === 'sales')
+      order = 'ORDER BY salesrank ASC NULLS LAST';
+    else if (sort === 'price')
+      order =
+        'ORDER BY COALESCE(buyboxprice, buyboxfallback) ASC NULLS LAST';
 
     const pool = getPool();
 
-    // 1) 実在カラムを取得
+    // DB の実在カラム取得
     const meta = await pool.query<{ column_name: string }>(`
       SELECT column_name
       FROM information_schema.columns
-      WHERE table_schema='public' AND table_name='products'
+      WHERE table_schema='public'
+        AND table_name='products'
     `);
-    const cols = new Set(meta.rows.map(r => r.column_name));
+    const cols = new Set(meta.rows.map((r) => r.column_name));
 
-    // 2) 実在に合わせて SELECT を組み立て
+    // 実在カラムに合わせて SELECT を構築（camelCase を排除）
     const selectParts = [
-      pickCol(cols, 'asin', 'asin', 'asin'),
-      pickCol(cols, 'title', 'title', 'title'),
-      pickCol(cols, 'brand', 'brand', 'brand'),
-      pickCol(cols, 'buyboxprice', 'buyBoxPrice', 'buyboxprice'),
-      pickCol(cols, 'buyboxfallback', 'buyBoxFallback', 'buyboxfallback'),
-      pickCol(cols, 'salesrank', 'salesRank', 'salesrank'),
-      pickCol(cols, 'droprate', 'dropRate', 'droprate'),
-      pickCol(cols, 'droprateprev', 'dropRatePrev', 'droprateprev'),
-      pickCol(cols, 'imageurl', 'imageUrl', 'imageurl'),
+      pickCol(cols, 'asin', 'asin'),
+      pickCol(cols, 'title', 'title'),
+      pickCol(cols, 'brand', 'brand'),
+      pickCol(cols, 'buyboxprice', 'buyboxprice'),
+      pickCol(cols, 'buyboxfallback', 'buyboxfallback'),
+      pickCol(cols, 'salesrank', 'salesrank'),
+      pickCol(cols, 'droprate', 'droprate'),
+      pickCol(cols, 'droprateprev', 'droprateprev'),
+      pickCol(cols, 'imageurl', 'imageurl'),
     ].join(',\n        ');
 
     const sql = `
@@ -96,10 +116,15 @@ export async function GET(req: NextRequest) {
     const { rows } = await pool.query<ProductRow>(sql, [limit]);
 
     const results = rows.map((item, i) => {
-      const score = (item.droprate ?? 0) * 2 + (10000 - (item.salesrank ?? 10000));
+      const score =
+        (item.droprate ?? 0) * 2 +
+        (10000 - (item.salesrank ?? 10000));
       const rawPrice = item.buyboxprice ?? item.buyboxfallback;
-      const price = rawPrice != null ? Math.round(rawPrice / 100) : null;
-      const diff = (item.droprate ?? 0) - (item.droprateprev ?? 0);
+      const price =
+        rawPrice != null ? Math.round(rawPrice / 100) : null;
+      const diff =
+        (item.droprate ?? 0) - (item.droprateprev ?? 0);
+
       return {
         rank: i + 1,
         asin: item.asin,
@@ -117,7 +142,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(results);
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.error('❌ /api/ranking error:', msg);
+    console.error('/api/ranking error:', msg);
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
