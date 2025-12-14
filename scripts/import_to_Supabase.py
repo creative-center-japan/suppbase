@@ -1,9 +1,10 @@
 # scripts/import_to_Supabase.py
 import os, json, time
 from typing import Any, Dict, List
-from supabase import create_client, Client
 from pathlib import Path
+from supabase import create_client, Client
 
+# ===== 入力ファイル =====
 INPUT_FILES = [
     "product_details.json",
     "supplement_product_details.json",
@@ -14,6 +15,7 @@ DROPS_FILES = [
     "data/deal_price_drops_supplements.json",
 ]
 
+# ===== util =====
 def load_json(path: str):
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -36,41 +38,45 @@ def load_price_drops(files: List[str]) -> Dict[str, int]:
     print(f"[i] loaded priceDrops for {len(out)} ASINs")
     return out
 
+# ===== ★ ここが最重要修正ポイント =====
 def to_row(p: Dict[str, Any]) -> Dict[str, Any]:
     asin = p.get("asin")
     if not asin:
         return {}
+
     title = p.get("title")
     brand = p.get("brand")
-    buyBoxPrice = p.get("buyBoxPrice")
-    buyBoxFallback = p.get("buyBoxFallback")
 
-    salesRank = p.get("salesRank")
-    if salesRank is None:
-        ranks = (p.get("salesRanks") or {}).get("0")
-        if isinstance(ranks, list) and ranks:
-            salesRank = ranks[-1]
+    # ---- Keepa stats.current を正しく参照 ----
+    stats = p.get("stats") or {}
+    cur = stats.get("current") or {}
 
-    imageUrl = p.get("imageUrl") or ""
-    if not imageUrl:
-        images_csv = (p.get("imagesCSV") or "")
+    buyboxprice = cur.get("buyBoxPrice")
+    salesrank   = cur.get("salesRank")
+    rating      = cur.get("rating")
+    reviewcount = cur.get("reviewCount")
+
+    # ---- image ----
+    imageurl = p.get("imageUrl") or ""
+    if not imageurl:
+        images_csv = p.get("imagesCSV") or ""
         if images_csv:
             image_id = images_csv.split(",")[0]
-            imageUrl = f"https://images-na.ssl-images-amazon.com/images/I/{image_id}.jpg"
+            imageurl = f"https://images-na.ssl-images-amazon.com/images/I/{image_id}.jpg"
 
     return {
         "asin": asin,
         "title": title,
         "brand": brand,
-        "buyboxprice": buyBoxPrice,
-        "buyboxfallback": buyBoxFallback,
-        "salesrank": salesRank,
-        "droprate": p.get("dropRate") or 0,      # 後で上書き
+        "buyboxprice": buyboxprice,
+        "buyboxfallback": None,
+        "salesrank": salesrank,
+        "droprate": p.get("dropRate") or 0,          # 後で上書き
         "droprateprev": p.get("dropRatePrev") or 0,
-        "imageurl": imageUrl,
-        "rating": p.get("rating"),
-        "reviewcount": p.get("reviewCount") if "reviewCount" in p else p.get("reviewcount"),
-        "score": p.get("score"),
+        "imageurl": imageurl,
+        "rating": rating,
+        "reviewcount": reviewcount,
+        "score": None,                               # score は別工程で計算
     }
 
 def load_products(files: List[str]) -> List[Dict[str, Any]]:
@@ -84,6 +90,7 @@ def load_products(files: List[str]) -> List[Dict[str, Any]]:
                 acc.extend(data)
         except Exception as e:
             print(f"[!] failed to read {name}: {e}")
+
     rows = [r for r in (to_row(p) for p in acc) if r.get("asin")]
     dedup: Dict[str, Dict[str, Any]] = {r["asin"]: r for r in rows}
     out = list(dedup.values())
@@ -93,8 +100,12 @@ def load_products(files: List[str]) -> List[Dict[str, Any]]:
 def chunked(lst: List[Dict[str, Any]], size: int) -> List[List[Dict[str, Any]]]:
     return [lst[i:i+size] for i in range(0, len(lst), size)]
 
-def upsert_with_retry(tbl: Any, rows: List[Dict[str, Any]], on_conflict: str = "asin",
-                      max_retries: int = 5) -> None:
+def upsert_with_retry(
+    tbl: Any,
+    rows: List[Dict[str, Any]],
+    on_conflict: str = "asin",
+    max_retries: int = 5
+) -> None:
     attempt = 0
     while True:
         try:
@@ -105,7 +116,7 @@ def upsert_with_retry(tbl: Any, rows: List[Dict[str, Any]], on_conflict: str = "
             if attempt > max_retries:
                 raise
             sleep = min(2 * (1.7 ** (attempt - 1)), 30)
-            print(f"[warn] upsert chunk failed (attempt {attempt}): {e} -> sleep {sleep:.1f}s")
+            print(f"[warn] upsert failed (attempt {attempt}): {e} → sleep {sleep:.1f}s")
             time.sleep(sleep)
 
 def fetch_existing_drops(client: Client, asins: List[str]) -> Dict[str, int]:
@@ -123,6 +134,7 @@ def fetch_existing_drops(client: Client, asins: List[str]) -> Dict[str, int]:
                 pass
     return out
 
+# ===== main =====
 def main() -> None:
     url = os.environ.get("SUPABASE_URL")
     key = os.environ.get("SUPABASE_SERVICE_ROLE")
@@ -133,14 +145,14 @@ def main() -> None:
 
     rows = load_products(INPUT_FILES)
     if not rows:
-        print("[i] no rows to import; exit normally")
+        print("[i] no rows to import; exit")
         return
 
     drops = load_price_drops(DROPS_FILES)
     all_asins = [r["asin"] for r in rows]
     prev = fetch_existing_drops(client, all_asins)
 
-    # droprate 更新（priceDrops を採用）＋差分
+    # ---- droprate 更新（priceDrops）----
     for r in rows:
         asin = r["asin"]
         if asin in drops:
