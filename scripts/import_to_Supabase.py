@@ -1,7 +1,6 @@
 # scripts/import_to_Supabase.py
 import os, json, time
 from typing import Any, Dict, List
-from pathlib import Path
 from supabase import create_client, Client
 
 # ===== 入力ファイル =====
@@ -38,7 +37,7 @@ def load_price_drops(files: List[str]) -> Dict[str, int]:
     print(f"[i] loaded priceDrops for {len(out)} ASINs")
     return out
 
-# ===== ★ ここが最重要修正ポイント =====
+# ===== ★ フラットJSON前提の正しいマッピング =====
 def to_row(p: Dict[str, Any]) -> Dict[str, Any]:
     asin = p.get("asin")
     if not asin:
@@ -47,16 +46,12 @@ def to_row(p: Dict[str, Any]) -> Dict[str, Any]:
     title = p.get("title")
     brand = p.get("brand")
 
-    # ---- Keepa stats.current を正しく参照 ----
-    stats = p.get("stats") or {}
-    cur = stats.get("current") or {}
+    buyboxprice = p.get("buyBoxPrice")
+    salesrank   = p.get("salesRank")
+    rating      = p.get("rating")
+    reviewcount = p.get("reviewCount")
 
-    buyboxprice = cur.get("buyBoxPrice")
-    salesrank   = cur.get("salesRank")
-    rating      = cur.get("rating")
-    reviewcount = cur.get("reviewCount")
-
-    # ---- image ----
+    # image
     imageurl = p.get("imageUrl") or ""
     if not imageurl:
         images_csv = p.get("imagesCSV") or ""
@@ -71,12 +66,12 @@ def to_row(p: Dict[str, Any]) -> Dict[str, Any]:
         "buyboxprice": buyboxprice,
         "buyboxfallback": None,
         "salesrank": salesrank,
-        "droprate": p.get("dropRate") or 0,          # 後で上書き
+        "droprate": p.get("dropRate") or 0,
         "droprateprev": p.get("dropRatePrev") or 0,
         "imageurl": imageurl,
         "rating": rating,
         "reviewcount": reviewcount,
-        "score": None,                               # score は別工程で計算
+        "score": None,   # score は次工程で計算
     }
 
 def load_products(files: List[str]) -> List[Dict[str, Any]]:
@@ -152,7 +147,7 @@ def main() -> None:
     all_asins = [r["asin"] for r in rows]
     prev = fetch_existing_drops(client, all_asins)
 
-    # ---- droprate 更新（priceDrops）----
+    # droprate 更新（priceDrops）
     for r in rows:
         asin = r["asin"]
         if asin in drops:
