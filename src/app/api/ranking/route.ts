@@ -11,16 +11,13 @@ let _pool: Pool | null = null;
 
 function normalizeDbUrl(raw: string) {
   const u = new URL(raw);
-  if (!u.searchParams.has('sslmode')) u.searchParams.set('sslmode', 'require');
+  if (!u.searchParams.has('sslmode')) {
+    u.searchParams.set('sslmode', 'require');
+  }
   if (!u.searchParams.has('target_session_attrs')) {
     u.searchParams.set('target_session_attrs', 'read-write');
   }
-
-  // Supabase pooler host 対策
-  if (/^[a-z0-9-]+\.pooler\.supabase\.com$/i.test(u.host)) {
-    u.host = 'aws-0-ap-southeast-1.pooler.supabase.com';
-  }
-
+  // ★ host の書き換えは絶対にしない
   return u;
 }
 
@@ -59,11 +56,15 @@ type ProductRow = {
 export async function GET(req: NextRequest) {
   try {
     const sp = new URL(req.url).searchParams;
+    const type = sp.get('type') ?? 'whey';
     const sort = sp.get('sort') ?? 'drop';
     const limit = Math.max(1, Math.min(100, Number(sp.get('limit') ?? '10')));
 
-    // 🔹 VIEW がすでに WPI ランキングなので WHERE は一旦使わない
-    const where = '';
+    // ✅ type ごとに参照 VIEW を切り替える
+    let table = 'v_rank_wpi_30d';
+    if (type === 'whey') table = 'v_rank_whey_30d';
+    else if (type === 'soy') table = 'v_rank_soy_30d';
+    else if (type === 'isolate') table = 'v_rank_wpi_30d';
 
     let order = 'ORDER BY droprate DESC';
     if (sort === 'score') {
@@ -78,16 +79,16 @@ export async function GET(req: NextRequest) {
 
     const pool = getPool();
 
-    // 🔹 実在カラム取得（VIEW）
+    // ✅ 選択した VIEW の実在カラムを取得
     const meta = await pool.query<{ column_name: string }>(`
       SELECT column_name
       FROM information_schema.columns
       WHERE table_schema = 'public'
-        AND table_name = 'v_rank_wpi_30d'
+        AND table_name = '${table}'
     `);
 
     const cols = new Set(meta.rows.map((r) => r.column_name));
-    console.log('Detected columns:', [...cols]);
+    console.log('Detected columns:', table, [...cols]);
 
     const selectParts = [
       pickCol(cols, 'asin', 'asin'),
@@ -104,8 +105,7 @@ export async function GET(req: NextRequest) {
     const sql = `
       SELECT
         ${selectParts}
-      FROM v_rank_wpi_30d
-      ${where}
+      FROM ${table}
       ${order}
       LIMIT $1
     `;
