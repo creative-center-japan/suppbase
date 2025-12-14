@@ -6,7 +6,7 @@ import Image from 'next/image';
 
 const tabs = [
   { id: 'bcaa', label: 'BCAA' },
-  { id: 'eaa',  label: 'EAA'  },
+  { id: 'eaa', label: 'EAA' },
 ];
 
 type ProductItem = {
@@ -31,15 +31,14 @@ const RankingSection = ({ items, loading }: { items: ProductItem[]; loading: boo
       {items.map(item => (
         <div
           key={item.asin}
-          className={`p-4 rounded-xl shadow-sm hover:shadow-md transition flex gap-4 ${
-            item.rank === 1
+          className={`p-4 rounded-xl shadow-sm hover:shadow-md transition flex gap-4 ${item.rank === 1
               ? 'border-2 border-yellow-400'
               : item.rank === 2
-              ? 'border-2 border-gray-400'
-              : item.rank === 3
-              ? 'border-2 border-orange-400'
-              : 'border border-gray-200'
-          }`}
+                ? 'border-2 border-gray-400'
+                : item.rank === 3
+                  ? 'border-2 border-orange-400'
+                  : 'border border-gray-200'
+            }`}
         >
           <Image
             src={item.imageUrl || '/no-image.png'}
@@ -49,45 +48,50 @@ const RankingSection = ({ items, loading }: { items: ProductItem[]; loading: boo
             className="object-contain rounded"
             unoptimized={Boolean(item.imageUrl?.includes('amazon'))}
           />
+
           <div className="flex-1">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3
-                  className={`text-lg font-semibold ${
-                    item.rank === 1
-                      ? 'text-yellow-500 text-xl font-bold'
-                      : item.rank === 2
-                      ? 'text-gray-500 text-lg font-semibold'
-                      : item.rank === 3
-                      ? 'text-orange-500 font-semibold'
+            {/* タイトル・ブランド */}
+            <h3
+              className={`text-lg font-semibold ${item.rank === 1
+                  ? 'text-yellow-500 text-xl font-bold'
+                  : item.rank === 2
+                    ? 'text-gray-500'
+                    : item.rank === 3
+                      ? 'text-orange-500'
                       : ''
-                  }`}
-                >
-                  #{item.rank} {item.title}
-                </h3>
-                <p className="text-sm text-gray-600">{item.brand}</p>
+                }`}
+            >
+              #{item.rank} {item.title}
+            </h3>
+            <p className="text-sm text-gray-600">{item.brand}</p>
+
+            {/* 数値 + Amazonボタン */}
+            <div className="mt-4 flex items-end justify-between gap-4">
+              <div className="text-sm text-gray-700 space-y-1">
+                <p>価格: {item.price != null ? `${item.price.toLocaleString()}円` : '―'}</p>
+                <p>
+                  ドロップ回数: {item.dropRate ?? '―'}
+                  {typeof item.dropRateDiff === 'number' &&
+                    (item.dropRateDiff > 0
+                      ? ` ↑${item.dropRateDiff}`
+                      : item.dropRateDiff < 0
+                        ? ` ↓${Math.abs(item.dropRateDiff)}`
+                        : '')}
+                </p>
+                <p>スコア: {item.score != null && item.score > 0 ? item.score : '―'}</p>
               </div>
+
               <a
                 href={item.affiliateUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-block w-32 h-9 bg-green-600 text-white text-sm text-center leading-9 rounded hover:bg-green-700"
+                className="shrink-0 inline-flex items-center justify-center
+                           rounded-md bg-green-600 px-4 py-2
+                           text-white text-sm font-semibold
+                           hover:bg-green-700 transition"
               >
                 Amazonで見る
               </a>
-            </div>
-            <div className="mt-2 text-sm text-gray-700">
-              <p>価格: {item.price != null ? `${item.price.toLocaleString()}円` : '―'}</p>
-              <p>
-                ドロップ回数: {item.dropRate ?? '―'}
-                {typeof item.dropRateDiff === 'number' &&
-                  (item.dropRateDiff > 0
-                    ? ` ↑${item.dropRateDiff}`
-                    : item.dropRateDiff < 0
-                    ? ` ↓${Math.abs(item.dropRateDiff)}`
-                    : '')}
-              </p>
-              <p>スコア: {item.score && item.score > 0 ? item.score : '―'}</p>
             </div>
           </div>
         </div>
@@ -97,11 +101,11 @@ const RankingSection = ({ items, loading }: { items: ProductItem[]; loading: boo
 };
 
 export default function SupplementRankingPage() {
-  const [activeTab, setActiveTab] = useState<'bcaa'|'eaa'>('bcaa');
+  const [activeTab, setActiveTab] = useState<'bcaa' | 'eaa'>('bcaa');
   const [bcaaItems, setBcaaItems] = useState<ProductItem[]>([]);
-  const [eaaItems,  setEaaItems]  = useState<ProductItem[]>([]);
-  const [loading,   setLoading]    = useState({ bcaa: true, eaa: true });
-  const [error,     setError]      = useState<string | null>(null);
+  const [eaaItems, setEaaItems] = useState<ProductItem[]>([]);
+  const [loading, setLoading] = useState({ bcaa: true, eaa: true });
+  const [error, setError] = useState<string | null>(null);
   const [titleMonth, setTitleMonth] = useState<string>('');
 
   useEffect(() => {
@@ -120,7 +124,7 @@ export default function SupplementRankingPage() {
         setError(null);
         const [r1, r2] = await Promise.all([
           fetch('/api/supplements?type=bcaa&sort=score', { cache: 'no-store', signal: ac.signal }),
-          fetch('/api/supplements?type=eaa&sort=score',  { cache: 'no-store', signal: ac.signal }),
+          fetch('/api/supplements?type=eaa&sort=score', { cache: 'no-store', signal: ac.signal }),
         ]);
         const [d1, d2] = await Promise.all([r1.json(), r2.json()]);
         setBcaaItems(Array.isArray(d1) ? d1 : []);
@@ -154,11 +158,10 @@ export default function SupplementRankingPage() {
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as 'bcaa' | 'eaa')}
-            className={`px-4 py-2 rounded-full border font-medium transition ${
-              activeTab === tab.id
+            className={`px-4 py-2 rounded-full border font-medium transition ${activeTab === tab.id
                 ? 'bg-green-600 text-white border-green-600'
                 : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
-            }`}
+              }`}
           >
             {tab.label}
           </button>
