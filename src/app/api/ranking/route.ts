@@ -1,8 +1,10 @@
 // healthy-site/src/app/api/ranking/route.ts
 
 export const runtime = 'nodejs';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { Pool } from 'pg';
+
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 let _pool: Pool | null = null;
@@ -10,25 +12,33 @@ let _pool: Pool | null = null;
 function normalizeDbUrl(raw: string) {
   const u = new URL(raw);
   if (!u.searchParams.has('sslmode')) u.searchParams.set('sslmode', 'require');
-  if (!u.searchParams.has('target_session_attrs')) u.searchParams.set('target_session_attrs', 'read-write');
+  if (!u.searchParams.has('target_session_attrs')) {
+    u.searchParams.set('target_session_attrs', 'read-write');
+  }
+
+  // Supabase pooler host 対策
   if (/^[a-z0-9-]+\.pooler\.supabase\.com$/i.test(u.host)) {
     u.host = 'aws-0-ap-southeast-1.pooler.supabase.com';
   }
+
   return u;
 }
 
 function getPool() {
   if (_pool) return _pool;
+
   const url = normalizeDbUrl(process.env.DATABASE_URL!);
   console.log('DB host in use =>', url.host);
+
   _pool = new Pool({
     connectionString: url.toString(),
     ssl: { rejectUnauthorized: false },
   });
+
   return _pool;
 }
 
-// lower（実際のカラム名）だけ見るように修正
+// 実在するカラムだけ SELECT に含める
 function pickCol(cols: Set<string>, lower: string, alias: string) {
   if (cols.has(lower)) return `"${lower}" AS ${alias}`;
   return `NULL AS ${alias}`;
@@ -49,49 +59,36 @@ type ProductRow = {
 export async function GET(req: NextRequest) {
   try {
     const sp = new URL(req.url).searchParams;
-    const type = sp.get('type') ?? 'all';
     const sort = sp.get('sort') ?? 'drop';
     const limit = Math.max(1, Math.min(100, Number(sp.get('limit') ?? '10')));
 
-    let where = '';
-    if (type === 'whey')
-      where = "WHERE title ILIKE '%ホエイ%' OR title ILIKE '%WPI%'";
-    else if (type === 'soy')
-      where = "WHERE title ILIKE '%ソイ%'";
-    else if (type === 'isolate')
-      where = "WHERE title ILIKE '%WPI%' OR title ILIKE '%アイソレート%'";
-    else if (type === 'bcaa')
-      where = "WHERE title ILIKE '%BCAA%' OR title ILIKE '%bcaa%'";
-    else if (type === 'eaa')
-      where = "WHERE title ILIKE '%EAA%' OR title ILIKE '%eaa%'";
-    else if (type === 'other')
-      where = `
-        WHERE title NOT ILIKE '%ホエイ%' AND title NOT ILIKE '%WPI%' AND title NOT ILIKE '%ソイ%'
-          AND title NOT ILIKE '%アイソレート%' AND title NOT ILIKE '%BCAA%' AND title NOT ILIKE '%EAA%'
-          AND title NOT ILIKE '%bcaa%' AND title NOT ILIKE '%eaa%'`;
+    // 🔹 VIEW がすでに WPI ランキングなので WHERE は一旦使わない
+    const where = '';
 
     let order = 'ORDER BY droprate DESC';
-    if (sort === 'score')
+    if (sort === 'score') {
       order =
         'ORDER BY (COALESCE(droprate,0)*2 + (10000-COALESCE(salesrank,10000))) DESC';
-    else if (sort === 'sales')
+    } else if (sort === 'sales') {
       order = 'ORDER BY salesrank ASC NULLS LAST';
-    else if (sort === 'price')
+    } else if (sort === 'price') {
       order =
         'ORDER BY COALESCE(buyboxprice, buyboxfallback) ASC NULLS LAST';
+    }
 
     const pool = getPool();
 
-    // DB の実在カラム取得
+    // 🔹 実在カラム取得（VIEW）
     const meta = await pool.query<{ column_name: string }>(`
       SELECT column_name
       FROM information_schema.columns
-      WHERE table_schema='public'
-        AND table_name='products'
+      WHERE table_schema = 'public'
+        AND table_name = 'v_rank_wpi_30d'
     `);
-    const cols = new Set(meta.rows.map((r) => r.column_name));
 
-    // 実在カラムに合わせて SELECT を構築（camelCase を排除）
+    const cols = new Set(meta.rows.map((r) => r.column_name));
+    console.log('Detected columns:', [...cols]);
+
     const selectParts = [
       pickCol(cols, 'asin', 'asin'),
       pickCol(cols, 'title', 'title'),
@@ -107,7 +104,7 @@ export async function GET(req: NextRequest) {
     const sql = `
       SELECT
         ${selectParts}
-      FROM products
+      FROM v_rank_wpi_30d
       ${where}
       ${order}
       LIMIT $1
@@ -119,9 +116,11 @@ export async function GET(req: NextRequest) {
       const score =
         (item.droprate ?? 0) * 2 +
         (10000 - (item.salesrank ?? 10000));
+
       const rawPrice = item.buyboxprice ?? item.buyboxfallback;
       const price =
         rawPrice != null ? Math.round(rawPrice / 100) : null;
+
       const diff =
         (item.droprate ?? 0) - (item.droprateprev ?? 0);
 
