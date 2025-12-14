@@ -23,28 +23,35 @@ type ProductItem = {
   affiliateUrl: string;
 };
 
-
-const RankingSection = ({ items, loading }: { items: ProductItem[]; loading: boolean }) => {
-  if (loading) return <p className="text-center text-gray-400">ランキング読み込み中...</p>;
-  if (!items.length) return <p className="text-center text-gray-400">データがありません</p>;
+// ★ loading を optional に変更
+const RankingSection = (
+  { items, loading }: { items: ProductItem[]; loading?: boolean }
+) => {
+  if (loading) {
+    return <p className="text-center text-gray-400">ランキング読み込み中...</p>;
+  }
+  if (!items.length) {
+    return <p className="text-center text-gray-400">データがありません</p>;
+  }
 
   return (
     <div className="space-y-4">
       {items.map(item => (
         <div
           key={item.asin}
-          className={`p-4 rounded-xl shadow-sm hover:shadow-md transition flex gap-4 ${item.rank === 1
+          className={`p-4 rounded-xl shadow-sm hover:shadow-md transition flex gap-4 ${
+            item.rank === 1
               ? 'border-2 border-yellow-400'
               : item.rank === 2
-                ? 'border-2 border-gray-400'
-                : item.rank === 3
-                  ? 'border-2 border-orange-400'
-                  : 'border border-gray-200'
-            }`}
+              ? 'border-2 border-gray-400'
+              : item.rank === 3
+              ? 'border-2 border-orange-400'
+              : 'border border-gray-200'
+          }`}
         >
           <Image
             src={item.imageUrl || '/no-image.png'}
-            alt={item.title || 'supplement'}
+            alt={item.title}
             width={96}
             height={96}
             className="object-contain rounded"
@@ -54,14 +61,15 @@ const RankingSection = ({ items, loading }: { items: ProductItem[]; loading: boo
           <div className="flex-1">
             {/* タイトル・ブランド */}
             <h3
-              className={`text-lg font-semibold ${item.rank === 1
+              className={`text-lg font-semibold ${
+                item.rank === 1
                   ? 'text-yellow-500 text-xl font-bold'
                   : item.rank === 2
-                    ? 'text-gray-500'
-                    : item.rank === 3
-                      ? 'text-orange-500'
-                      : ''
-                }`}
+                  ? 'text-gray-500'
+                  : item.rank === 3
+                  ? 'text-orange-500'
+                  : ''
+              }`}
             >
               #{item.rank} {item.title}
             </h3>
@@ -77,8 +85,8 @@ const RankingSection = ({ items, loading }: { items: ProductItem[]; loading: boo
                     (item.dropRateDiff > 0
                       ? ` ↑${item.dropRateDiff}`
                       : item.dropRateDiff < 0
-                        ? ` ↓${Math.abs(item.dropRateDiff)}`
-                        : '')}
+                      ? ` ↓${Math.abs(item.dropRateDiff)}`
+                      : '')}
                 </p>
                 <p>スコア: {item.score != null && item.score > 0 ? item.score : '―'}</p>
               </div>
@@ -130,7 +138,12 @@ export default function ProteinRankingPage() {
       .then(data => setIsolateItems(data || []));
   }, []);
 
-  const items = activeTab === 'soy' ? soyItems : activeTab === 'isolate' ? isolateItems : wheyItems;
+  const items =
+    activeTab === 'soy'
+      ? soyItems
+      : activeTab === 'isolate'
+      ? isolateItems
+      : wheyItems;
 
   return (
     <main className="max-w-4xl mx-auto px-4 py-8">
@@ -148,16 +161,18 @@ export default function ProteinRankingPage() {
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as 'whey' | 'soy' | 'isolate')}
-            className={`px-4 py-2 rounded-full border font-medium transition ${activeTab === tab.id
+            className={`px-4 py-2 rounded-full border font-medium transition ${
+              activeTab === tab.id
                 ? 'bg-green-600 text-white border-green-600'
                 : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
-              }`}
+            }`}
           >
             {tab.label}
           </button>
         ))}
       </div>
 
+      {/* loading は渡さなくてOK */}
       <RankingSection items={items} />
     </main>
   );

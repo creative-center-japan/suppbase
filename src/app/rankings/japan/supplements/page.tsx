@@ -22,7 +22,43 @@ type ProductItem = {
   affiliateUrl: string;
 };
 
-const RankingSection = ({ items, loading }: { items: ProductItem[]; loading: boolean }) => {
+/* ===============================
+   ★ サプリ除外ロジック（ここ重要）
+   =============================== */
+const EXCLUDE_WORDS = [
+  'プロテイン',
+  'protein',
+  'ホエイ',
+  'whey',
+  'wpc',
+  'wpi',
+  'ドリンク',
+  '飲料',
+  'ミルク',
+  'シェイク',
+];
+
+function isPureSupplement(title: string, type: 'bcaa' | 'eaa') {
+  const t = title.toLowerCase();
+
+  // 除外（実質プロテイン）
+  if (EXCLUDE_WORDS.some(w => t.includes(w.toLowerCase()))) {
+    return false;
+  }
+
+  // 必須キーワード
+  if (type === 'bcaa') return t.includes('bcaa');
+  if (type === 'eaa') return t.includes('eaa');
+
+  return false;
+}
+
+/* ===============================
+   RankingSection
+   =============================== */
+const RankingSection = (
+  { items, loading }: { items: ProductItem[]; loading?: boolean }
+) => {
   if (loading) return <p className="text-center text-gray-400">ランキング読み込み中...</p>;
   if (!items.length) return <p className="text-center text-gray-400">データがありません</p>;
 
@@ -31,18 +67,19 @@ const RankingSection = ({ items, loading }: { items: ProductItem[]; loading: boo
       {items.map(item => (
         <div
           key={item.asin}
-          className={`p-4 rounded-xl shadow-sm hover:shadow-md transition flex gap-4 ${item.rank === 1
+          className={`p-4 rounded-xl shadow-sm hover:shadow-md transition flex gap-4 ${
+            item.rank === 1
               ? 'border-2 border-yellow-400'
               : item.rank === 2
-                ? 'border-2 border-gray-400'
-                : item.rank === 3
-                  ? 'border-2 border-orange-400'
-                  : 'border border-gray-200'
-            }`}
+              ? 'border-2 border-gray-400'
+              : item.rank === 3
+              ? 'border-2 border-orange-400'
+              : 'border border-gray-200'
+          }`}
         >
           <Image
             src={item.imageUrl || '/no-image.png'}
-            alt={item.title || 'supplement'}
+            alt={item.title}
             width={96}
             height={96}
             className="object-contain rounded"
@@ -50,22 +87,21 @@ const RankingSection = ({ items, loading }: { items: ProductItem[]; loading: boo
           />
 
           <div className="flex-1">
-            {/* タイトル・ブランド */}
             <h3
-              className={`text-lg font-semibold ${item.rank === 1
+              className={`text-lg font-semibold ${
+                item.rank === 1
                   ? 'text-yellow-500 text-xl font-bold'
                   : item.rank === 2
-                    ? 'text-gray-500'
-                    : item.rank === 3
-                      ? 'text-orange-500'
-                      : ''
-                }`}
+                  ? 'text-gray-500'
+                  : item.rank === 3
+                  ? 'text-orange-500'
+                  : ''
+              }`}
             >
               #{item.rank} {item.title}
             </h3>
             <p className="text-sm text-gray-600">{item.brand}</p>
 
-            {/* 数値 + Amazonボタン */}
             <div className="mt-4 flex items-end justify-between gap-4">
               <div className="text-sm text-gray-700 space-y-1">
                 <p>価格: {item.price != null ? `${item.price.toLocaleString()}円` : '―'}</p>
@@ -75,8 +111,8 @@ const RankingSection = ({ items, loading }: { items: ProductItem[]; loading: boo
                     (item.dropRateDiff > 0
                       ? ` ↑${item.dropRateDiff}`
                       : item.dropRateDiff < 0
-                        ? ` ↓${Math.abs(item.dropRateDiff)}`
-                        : '')}
+                      ? ` ↓${Math.abs(item.dropRateDiff)}`
+                      : '')}
                 </p>
                 <p>スコア: {item.score != null && item.score > 0 ? item.score : '―'}</p>
               </div>
@@ -100,6 +136,9 @@ const RankingSection = ({ items, loading }: { items: ProductItem[]; loading: boo
   );
 };
 
+/* ===============================
+   Page
+   =============================== */
 export default function SupplementRankingPage() {
   const [activeTab, setActiveTab] = useState<'bcaa' | 'eaa'>('bcaa');
   const [bcaaItems, setBcaaItems] = useState<ProductItem[]>([]);
@@ -124,11 +163,21 @@ export default function SupplementRankingPage() {
         setError(null);
         const [r1, r2] = await Promise.all([
           fetch('/api/supplements?type=bcaa&sort=score', { cache: 'no-store', signal: ac.signal }),
-          fetch('/api/supplements?type=eaa&sort=score', { cache: 'no-store', signal: ac.signal }),
+          fetch('/api/supplements?type=eaa&sort=score',  { cache: 'no-store', signal: ac.signal }),
         ]);
         const [d1, d2] = await Promise.all([r1.json(), r2.json()]);
-        setBcaaItems(Array.isArray(d1) ? d1 : []);
-        setEaaItems(Array.isArray(d2) ? d2 : []);
+
+        // ★ ここで除外を適用
+        setBcaaItems(
+          (Array.isArray(d1) ? d1 : []).filter(item =>
+            isPureSupplement(item.title, 'bcaa')
+          )
+        );
+        setEaaItems(
+          (Array.isArray(d2) ? d2 : []).filter(item =>
+            isPureSupplement(item.title, 'eaa')
+          )
+        );
       } catch (e) {
         console.error('supplements load failed:', e);
         setError('読み込みに失敗しました。時間をおいて再度お試しください。');
@@ -158,10 +207,11 @@ export default function SupplementRankingPage() {
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as 'bcaa' | 'eaa')}
-            className={`px-4 py-2 rounded-full border font-medium transition ${activeTab === tab.id
+            className={`px-4 py-2 rounded-full border font-medium transition ${
+              activeTab === tab.id
                 ? 'bg-green-600 text-white border-green-600'
                 : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
-              }`}
+            }`}
           >
             {tab.label}
           </button>
