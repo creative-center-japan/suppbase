@@ -2,7 +2,7 @@
 
 export const runtime = 'nodejs';
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { Pool } from 'pg';
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
@@ -11,7 +11,9 @@ let _pool: Pool | null = null;
 
 function normalizeDbUrl(raw: string) {
   const u = new URL(raw);
-  if (!u.searchParams.has('sslmode')) u.searchParams.set('sslmode', 'require');
+  if (!u.searchParams.has('sslmode')) {
+    u.searchParams.set('sslmode', 'require');
+  }
   if (!u.searchParams.has('target_session_attrs')) {
     u.searchParams.set('target_session_attrs', 'read-write');
   }
@@ -28,6 +30,7 @@ function getPool() {
   return _pool;
 }
 
+// 実在カラムだけ SELECT
 function pickCol(cols: Set<string>, lower: string, alias: string) {
   if (cols.has(lower)) return `"${lower}" AS ${alias}`;
   return `NULL AS ${alias}`;
@@ -48,8 +51,11 @@ type Row = {
 
 export async function GET() {
   try {
+    // ★ 常に TOP10 固定
     const limit = 10;
 
+    // ★ BCAA + EAA をまとめたサプリランキング
+    //   プロテイン系は除外
     const where = `
       WHERE (
         title ILIKE '%BCAA%' OR title ILIKE '%bcaa%' OR title ILIKE '%ＢＣＡＡ%' OR
@@ -63,6 +69,7 @@ export async function GET() {
       AND title NOT ILIKE '%wpi%'
     `;
 
+    // ★ スコア未成熟でも順位が安定する並び
     const order = `
       ORDER BY
         COALESCE(score, 0) DESC,
@@ -72,6 +79,7 @@ export async function GET() {
 
     const pool = getPool();
 
+    // 実在カラム取得
     const meta = await pool.query<{ column_name: string }>(`
       SELECT column_name
       FROM information_schema.columns
@@ -104,6 +112,7 @@ export async function GET() {
 
     const { rows } = await pool.query<Row>(sql, [limit]);
 
+    // ★ rank は UI 用に 1〜10 で再採番
     const items = rows.map((p, i) => {
       const rawPrice = p.buyboxprice ?? p.buyboxfallback;
       const price = rawPrice != null ? Math.round(rawPrice / 100) : null;
@@ -125,6 +134,7 @@ export async function GET() {
     return NextResponse.json(items);
   } catch (e) {
     console.error('❌ /api/supplements error:', e);
+    // フロントを壊さないため 200 + 空配列
     return NextResponse.json([], { status: 200 });
   }
 }
