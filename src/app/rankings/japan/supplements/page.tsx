@@ -10,7 +10,7 @@ const tabs = [
 ];
 
 type ProductItem = {
-  rank: number;
+  rank: number; // API由来だが、UIでは使わず再採番
   title: string;
   asin: string;
   brand: string;
@@ -23,34 +23,32 @@ type ProductItem = {
 };
 
 /* ===============================
-   ★ サプリ除外ロジック（ここ重要）
+   ★ 除外ロジック
    =============================== */
-const EXCLUDE_WORDS = [
-  'プロテイン',
-  'protein',
-  'ホエイ',
-  'whey',
-  'wpc',
-  'wpi',
-  'ドリンク',
-  '飲料',
-  'ミルク',
-  'シェイク',
-];
 
-function isPureSupplement(title: string, type: 'bcaa' | 'eaa') {
+// BCAAでは「プロテイン系」を強く除外
+function isPureBCAA(title: string) {
   const t = title.toLowerCase();
-
-  // 除外（実質プロテイン）
-  if (EXCLUDE_WORDS.some(w => t.includes(w.toLowerCase()))) {
+  if (
+    t.includes('プロテイン') ||
+    t.includes('protein') ||
+    t.includes('ホエイ') ||
+    t.includes('whey') ||
+    t.includes('wpc') ||
+    t.includes('wpi')
+  ) {
     return false;
   }
+  return t.includes('bcaa');
+}
 
-  // 必須キーワード
-  if (type === 'bcaa') return t.includes('bcaa');
-  if (type === 'eaa') return t.includes('eaa');
-
-  return false;
+// EAAは除外を緩める（飲料だけ弾く）
+function isPureEAA(title: string) {
+  const t = title.toLowerCase();
+  if (t.includes('ドリンク') || t.includes('飲料')) {
+    return false;
+  }
+  return t.includes('eaa');
 }
 
 /* ===============================
@@ -64,15 +62,15 @@ const RankingSection = (
 
   return (
     <div className="space-y-4">
-      {items.map(item => (
+      {items.map((item, index) => (
         <div
           key={item.asin}
           className={`p-4 rounded-xl shadow-sm hover:shadow-md transition flex gap-4 ${
-            item.rank === 1
+            index === 0
               ? 'border-2 border-yellow-400'
-              : item.rank === 2
+              : index === 1
               ? 'border-2 border-gray-400'
-              : item.rank === 3
+              : index === 2
               ? 'border-2 border-orange-400'
               : 'border border-gray-200'
           }`}
@@ -87,21 +85,23 @@ const RankingSection = (
           />
 
           <div className="flex-1">
+            {/* タイトル・ブランド */}
             <h3
               className={`text-lg font-semibold ${
-                item.rank === 1
+                index === 0
                   ? 'text-yellow-500 text-xl font-bold'
-                  : item.rank === 2
+                  : index === 1
                   ? 'text-gray-500'
-                  : item.rank === 3
+                  : index === 2
                   ? 'text-orange-500'
                   : ''
               }`}
             >
-              #{item.rank} {item.title}
+              #{index + 1} {item.title}
             </h3>
             <p className="text-sm text-gray-600">{item.brand}</p>
 
+            {/* 数値 + Amazonボタン */}
             <div className="mt-4 flex items-end justify-between gap-4">
               <div className="text-sm text-gray-700 space-y-1">
                 <p>価格: {item.price != null ? `${item.price.toLocaleString()}円` : '―'}</p>
@@ -167,16 +167,12 @@ export default function SupplementRankingPage() {
         ]);
         const [d1, d2] = await Promise.all([r1.json(), r2.json()]);
 
-        // ★ ここで除外を適用
+        // ★ 除外ロジックをここで適用
         setBcaaItems(
-          (Array.isArray(d1) ? d1 : []).filter(item =>
-            isPureSupplement(item.title, 'bcaa')
-          )
+          (Array.isArray(d1) ? d1 : []).filter(item => isPureBCAA(item.title))
         );
         setEaaItems(
-          (Array.isArray(d2) ? d2 : []).filter(item =>
-            isPureSupplement(item.title, 'eaa')
-          )
+          (Array.isArray(d2) ? d2 : []).filter(item => isPureEAA(item.title))
         );
       } catch (e) {
         console.error('supplements load failed:', e);
