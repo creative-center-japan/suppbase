@@ -11,7 +11,9 @@ let _pool: Pool | null = null;
 
 function normalizeDbUrl(raw: string) {
   const u = new URL(raw);
-  if (!u.searchParams.has('sslmode')) u.searchParams.set('sslmode', 'require');
+  if (!u.searchParams.has('sslmode')) {
+    u.searchParams.set('sslmode', 'require');
+  }
   if (!u.searchParams.has('target_session_attrs')) {
     u.searchParams.set('target_session_attrs', 'read-write');
   }
@@ -54,32 +56,53 @@ export async function GET(req: NextRequest) {
     const type = (sp.get('type') ?? 'whey').toLowerCase();
     const sort = (sp.get('sort') ?? 'score').toLowerCase();
 
-    // ★ 強制的に TOP10 のみ
+    // ★ API 側で必ず TOP10 に制限
     const limit = 10;
 
     // ===== 参照テーブル / WHERE =====
     let table = 'products';
     let where = '';
 
-    // protein
-    if (type === 'whey') table = 'v_rank_whey_30d';
-    else if (type === 'soy') table = 'v_rank_soy_30d';
-    else if (type === 'isolate') table = 'v_rank_wpi_30d';
+    // ===== protein =====
+    if (type === 'whey') {
+      table = 'v_rank_whey_30d';
+    } else if (type === 'isolate') {
+      table = 'v_rank_wpi_30d';
+    }
 
-    // supplements（VIEW 未整備なので products + WHERE）
+    // ★ ソイだけは VIEW を使わず products 直参照
+    else if (type === 'soy') {
+      table = 'products';
+      where = `
+        WHERE
+          title ILIKE '%ソイ%' OR
+          title ILIKE '%soy%' OR
+          title ILIKE '%SOY%' OR
+          title ILIKE '%大豆%' OR
+          title ILIKE '%植物性%'
+      `;
+    }
+
+    // ===== supplements =====
     else if (type === 'bcaa') {
       table = 'products';
       where = `
-        WHERE title ILIKE '%BCAA%' OR title ILIKE '%bcaa%' OR title ILIKE '%ＢＣＡＡ%'
+        WHERE
+          title ILIKE '%BCAA%' OR
+          title ILIKE '%bcaa%' OR
+          title ILIKE '%ＢＣＡＡ%'
       `;
     } else if (type === 'eaa') {
       table = 'products';
       where = `
-        WHERE title ILIKE '%EAA%' OR title ILIKE '%eaa%' OR title ILIKE '%ＥＡＡ%'
+        WHERE
+          title ILIKE '%EAA%' OR
+          title ILIKE '%eaa%' OR
+          title ILIKE '%ＥＡＡ%'
       `;
     }
 
-    // ===== ORDER BY（未成熟でも安定）=====
+    // ===== ORDER BY（未成熟データでも安定）=====
     let order = `
       ORDER BY
         COALESCE(score, 0) DESC,
@@ -136,7 +159,7 @@ export async function GET(req: NextRequest) {
 
     const { rows } = await pool.query<Row>(sql, [limit]);
 
-    // ===== rank は必ず 1〜10 に再採番 =====
+    // ===== rank は UI 用に必ず 1〜10 で再採番 =====
     const items = rows.map((p, i) => {
       const rawPrice = p.buyboxprice ?? p.buyboxfallback;
       const price = rawPrice != null ? Math.round(rawPrice / 100) : null;
@@ -158,6 +181,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(items);
   } catch (e: unknown) {
     console.error('❌ /api/ranking error:', e);
+    // フロントを壊さないため 200 + 空配列
     return NextResponse.json([], { status: 200 });
   }
 }

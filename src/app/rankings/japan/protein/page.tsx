@@ -1,3 +1,5 @@
+// healthy-site\src\app\rankings\japan\protein\page.tsx
+
 'use client';
 
 import { useEffect, useState } from 'react';
