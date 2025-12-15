@@ -1,16 +1,13 @@
+// healthy-site\src\app\rankings\japan\supplements\page.tsx
+
 'use client';
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 
-const tabs = [
-  { id: 'bcaa', label: 'BCAA' },
-  { id: 'eaa', label: 'EAA' },
-];
-
 type ProductItem = {
-  rank: number; // API由来だが、UIでは使わず再採番
+  rank: number;
   title: string;
   asin: string;
   brand: string;
@@ -22,43 +19,10 @@ type ProductItem = {
   affiliateUrl: string;
 };
 
-/* ===============================
-   ★ 除外ロジック
-   =============================== */
-
-// BCAAでは「プロテイン系」を強く除外
-function isPureBCAA(title: string) {
-  const t = title.toLowerCase();
-  if (
-    t.includes('プロテイン') ||
-    t.includes('protein') ||
-    t.includes('ホエイ') ||
-    t.includes('whey') ||
-    t.includes('wpc') ||
-    t.includes('wpi')
-  ) {
-    return false;
+const RankingSection = ({ items }: { items: ProductItem[] }) => {
+  if (!items.length) {
+    return <p className="text-center text-gray-400">データがありません</p>;
   }
-  return t.includes('bcaa');
-}
-
-// EAAは除外を緩める（飲料だけ弾く）
-function isPureEAA(title: string) {
-  const t = title.toLowerCase();
-  if (t.includes('ドリンク') || t.includes('飲料')) {
-    return false;
-  }
-  return t.includes('eaa');
-}
-
-/* ===============================
-   RankingSection
-   =============================== */
-const RankingSection = (
-  { items, loading }: { items: ProductItem[]; loading?: boolean }
-) => {
-  if (loading) return <p className="text-center text-gray-400">ランキング読み込み中...</p>;
-  if (!items.length) return <p className="text-center text-gray-400">データがありません</p>;
 
   return (
     <div className="space-y-4">
@@ -85,7 +49,6 @@ const RankingSection = (
           />
 
           <div className="flex-1">
-            {/* タイトル・ブランド */}
             <h3
               className={`text-lg font-semibold ${
                 index === 0
@@ -101,7 +64,6 @@ const RankingSection = (
             </h3>
             <p className="text-sm text-gray-600">{item.brand}</p>
 
-            {/* 数値 + Amazonボタン */}
             <div className="mt-4 flex items-end justify-between gap-4">
               <div className="text-sm text-gray-700 space-y-1">
                 <p>価格: {item.price != null ? `${item.price.toLocaleString()}円` : '―'}</p>
@@ -136,15 +98,8 @@ const RankingSection = (
   );
 };
 
-/* ===============================
-   Page
-   =============================== */
 export default function SupplementRankingPage() {
-  const [activeTab, setActiveTab] = useState<'bcaa' | 'eaa'>('bcaa');
-  const [bcaaItems, setBcaaItems] = useState<ProductItem[]>([]);
-  const [eaaItems, setEaaItems] = useState<ProductItem[]>([]);
-  const [loading, setLoading] = useState({ bcaa: true, eaa: true });
-  const [error, setError] = useState<string | null>(null);
+  const [items, setItems] = useState<ProductItem[]>([]);
   const [titleMonth, setTitleMonth] = useState<string>('');
 
   useEffect(() => {
@@ -157,35 +112,10 @@ export default function SupplementRankingPage() {
   }, []);
 
   useEffect(() => {
-    const ac = new AbortController();
-    (async () => {
-      try {
-        setError(null);
-        const [r1, r2] = await Promise.all([
-          fetch('/api/supplements?type=bcaa&sort=score', { cache: 'no-store', signal: ac.signal }),
-          fetch('/api/supplements?type=eaa&sort=score',  { cache: 'no-store', signal: ac.signal }),
-        ]);
-        const [d1, d2] = await Promise.all([r1.json(), r2.json()]);
-
-        // ★ 除外ロジックをここで適用
-        setBcaaItems(
-          (Array.isArray(d1) ? d1 : []).filter(item => isPureBCAA(item.title))
-        );
-        setEaaItems(
-          (Array.isArray(d2) ? d2 : []).filter(item => isPureEAA(item.title))
-        );
-      } catch (e) {
-        console.error('supplements load failed:', e);
-        setError('読み込みに失敗しました。時間をおいて再度お試しください。');
-      } finally {
-        setLoading({ bcaa: false, eaa: false });
-      }
-    })();
-    return () => ac.abort();
+    fetch('/api/supplements', { cache: 'no-store' })
+      .then(res => res.json())
+      .then(data => setItems(Array.isArray(data) ? data : []));
   }, []);
-
-  const items = activeTab === 'eaa' ? eaaItems : bcaaItems;
-  const isLoading = activeTab === 'eaa' ? loading.eaa : loading.bcaa;
 
   return (
     <main className="max-w-4xl mx-auto px-4 py-8">
@@ -198,24 +128,7 @@ export default function SupplementRankingPage() {
         </Link>
       </p>
 
-      <div className="flex justify-center mb-6 gap-2">
-        {tabs.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id as 'bcaa' | 'eaa')}
-            className={`px-4 py-2 rounded-full border font-medium transition ${
-              activeTab === tab.id
-                ? 'bg-green-600 text-white border-green-600'
-                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {error && <p className="text-center text-red-500 mb-4">{error}</p>}
-      <RankingSection items={items} loading={isLoading} />
+      <RankingSection items={items} />
     </main>
   );
 }

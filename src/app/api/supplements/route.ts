@@ -1,3 +1,5 @@
+// healthy-site/src/app/api/supplements/route.ts
+
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -10,26 +12,28 @@ let _pool: Pool | null = null;
 function normalizeDbUrl(raw: string) {
   const u = new URL(raw);
   if (!u.searchParams.has('sslmode')) u.searchParams.set('sslmode', 'require');
-  if (!u.searchParams.has('target_session_attrs')) u.searchParams.set('target_session_attrs', 'read-write');
-  if (/^[a-z0-9-]+\.pooler\.supabase\.com$/i.test(u.host)) {
-    u.host = 'aws-0-ap-southeast-1.pooler.supabase.com';
+  if (!u.searchParams.has('target_session_attrs')) {
+    u.searchParams.set('target_session_attrs', 'read-write');
   }
   return u;
 }
+
 function getPool() {
   if (_pool) return _pool;
   const url = normalizeDbUrl(process.env.DATABASE_URL!);
-  _pool = new Pool({ connectionString: url.toString(), ssl: { rejectUnauthorized: false } });
+  _pool = new Pool({
+    connectionString: url.toString(),
+    ssl: { rejectUnauthorized: false },
+  });
   return _pool;
 }
 
-function pickCol(cols: Set<string>, lower: string, camel: string, alias: string) {
+function pickCol(cols: Set<string>, lower: string, alias: string) {
   if (cols.has(lower)) return `"${lower}" AS ${alias}`;
-  if (cols.has(camel)) return `"${camel}" AS ${alias}`;
   return `NULL AS ${alias}`;
 }
 
-type ProductRow = {
+type Row = {
   asin: string;
   title: string;
   brand: string | null;
@@ -38,49 +42,56 @@ type ProductRow = {
   salesrank: number | null;
   droprate: number | null;
   droprateprev: number | null;
-  imageurl: string | null;
   score: number | null;
+  imageurl: string | null;
 };
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   try {
-    const sp = new URL(req.url).searchParams;
-    const type = (sp.get('type') ?? 'bcaa').toLowerCase();
-    const sort = sp.get('sort') ?? 'score';
-    const limit = Math.max(1, Math.min(100, Number(sp.get('limit') ?? '50')));
+    const limit = 10;
 
-    // === where 条件（全角/半角を両方サポート）===
-    const where =
-      type === 'eaa'
-        ? `WHERE title ILIKE '%EAA%' OR title ILIKE '%eaa%' OR title ILIKE '%ＥＡＡ%'`
-        : `WHERE title ILIKE '%BCAA%' OR title ILIKE '%bcaa%' OR title ILIKE '%ＢＣＡＡ%'`;
+    const where = `
+      WHERE (
+        title ILIKE '%BCAA%' OR title ILIKE '%bcaa%' OR title ILIKE '%ＢＣＡＡ%' OR
+        title ILIKE '%EAA%'  OR title ILIKE '%eaa%'  OR title ILIKE '%ＥＡＡ%'
+      )
+      AND title NOT ILIKE '%プロテイン%'
+      AND title NOT ILIKE '%protein%'
+      AND title NOT ILIKE '%ホエイ%'
+      AND title NOT ILIKE '%whey%'
+      AND title NOT ILIKE '%wpc%'
+      AND title NOT ILIKE '%wpi%'
+    `;
 
-    let order = 'ORDER BY score DESC NULLS LAST';
-    if (sort === 'droprate') order = 'ORDER BY droprate DESC NULLS LAST';
-    else if (sort === 'sales') order = 'ORDER BY salesrank ASC NULLS LAST';
-    else if (sort === 'price') order = 'ORDER BY COALESCE(buyboxprice, buyboxfallback) ASC NULLS LAST';
+    const order = `
+      ORDER BY
+        COALESCE(score, 0) DESC,
+        COALESCE(droprate, 0) DESC,
+        updated_at DESC
+    `;
 
     const pool = getPool();
 
     const meta = await pool.query<{ column_name: string }>(`
       SELECT column_name
       FROM information_schema.columns
-      WHERE table_schema='public' AND table_name='products'
+      WHERE table_schema='public'
+        AND table_name='products'
     `);
     const cols = new Set(meta.rows.map(r => r.column_name));
 
     const selectParts = [
-      pickCol(cols, 'asin', 'asin', 'asin'),
-      pickCol(cols, 'title', 'title', 'title'),
-      pickCol(cols, 'brand', 'brand', 'brand'),
-      pickCol(cols, 'buyboxprice', 'buyBoxPrice', 'buyboxprice'),
-      pickCol(cols, 'buyboxfallback', 'buyBoxFallback', 'buyboxfallback'),
-      pickCol(cols, 'salesrank', 'salesRank', 'salesrank'),
-      pickCol(cols, 'droprate', 'dropRate', 'droprate'),
-      pickCol(cols, 'droprateprev', 'dropRatePrev', 'droprateprev'),
-      pickCol(cols, 'imageurl', 'imageUrl', 'imageurl'),
-      pickCol(cols, 'score', 'score', 'score'),
-    ].join(',\n        ');
+      pickCol(cols, 'asin', 'asin'),
+      pickCol(cols, 'title', 'title'),
+      pickCol(cols, 'brand', 'brand'),
+      pickCol(cols, 'buyboxprice', 'buyboxprice'),
+      pickCol(cols, 'buyboxfallback', 'buyboxfallback'),
+      pickCol(cols, 'salesrank', 'salesrank'),
+      pickCol(cols, 'droprate', 'droprate'),
+      pickCol(cols, 'droprateprev', 'droprateprev'),
+      pickCol(cols, 'score', 'score'),
+      pickCol(cols, 'imageurl', 'imageurl'),
+    ].join(',\n');
 
     const sql = `
       SELECT
@@ -91,12 +102,11 @@ export async function GET(req: NextRequest) {
       LIMIT $1
     `;
 
-    const { rows } = await pool.query<ProductRow>(sql, [limit]);
+    const { rows } = await pool.query<Row>(sql, [limit]);
 
     const items = rows.map((p, i) => {
       const rawPrice = p.buyboxprice ?? p.buyboxfallback;
       const price = rawPrice != null ? Math.round(rawPrice / 100) : null;
-      const diff = (p.droprate ?? 0) - (p.droprateprev ?? 0);
 
       return {
         rank: i + 1,
@@ -104,18 +114,17 @@ export async function GET(req: NextRequest) {
         title: p.title,
         brand: p.brand ?? '',
         price,
+        dropRate: p.droprate ?? 0,
+        dropRateDiff: (p.droprate ?? 0) - (p.droprateprev ?? 0),
+        score: p.score ?? 0,
         imageUrl: p.imageurl,
-        dropRate: p.droprate,
-        dropRateDiff: diff,
-        score: p.score ?? null,
         affiliateUrl: `https://www.amazon.co.jp/dp/${p.asin}`,
       };
     });
 
     return NextResponse.json(items);
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error('❌ /api/supplements error:', msg);
+  } catch (e) {
+    console.error('❌ /api/supplements error:', e);
     return NextResponse.json([], { status: 200 });
   }
 }
