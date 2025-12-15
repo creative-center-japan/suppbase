@@ -1,170 +1,127 @@
-# scripts/import_to_Supabase.py
-import os, json, time
-from typing import Any, Dict, List
-from supabase import create_client, Client
+import os
+import json
+from supabase import create_client
+from typing import Dict, Any, List
 
-# ===== 入力ファイル =====
-INPUT_FILES = [
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_SERVICE_ROLE = os.environ.get("SUPABASE_SERVICE_ROLE")
+
+if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE:
+    raise RuntimeError("SUPABASE_URL / SUPABASE_SERVICE_ROLE is not set")
+
+supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE)
+
+# ==== 入力ファイル ====
+PRODUCT_FILES = [
     "product_details.json",
     "supplement_product_details.json",
 ]
 
+# price drop ファイル（存在すれば使用）
 DROPS_FILES = [
     "data/deal_price_drops_protein.json",
     "data/deal_price_drops_supplements.json",
 ]
 
-# ===== util =====
+
+# -------------------------------------------------
+# util
+# -------------------------------------------------
 def load_json(path: str):
+    if not os.path.exists(path):
+        return None
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def safe_int(v):
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+        if v is None:
+            return None
+        v = int(v)
+        return v if v >= 0 else None
     except Exception:
         return None
 
-def load_price_drops(files: List[str]) -> Dict[str, int]:
-    out: Dict[str, int] = {}
-    for p in files:
-        obj = load_json(p)
-        if isinstance(obj, dict):
-            for k, v in obj.items():
-                try:
-                    iv = int(v)
-                    if iv >= 0:
-                        out[k] = iv
-                except Exception:
-                    pass
-    print(f"[i] loaded priceDrops for {len(out)} ASINs")
-    return out
 
-# ===== ★ フラットJSON前提の正しいマッピング =====
-def to_row(p: Dict[str, Any]) -> Dict[str, Any]:
-    asin = p.get("asin")
+def safe_float(v):
+    try:
+        if v is None:
+            return None
+        return float(v)
+    except Exception:
+        return None
+
+
+# -------------------------------------------------
+# load priceDrops
+# -------------------------------------------------
+drop_map: Dict[str, int] = {}
+
+for f in DROPS_FILES:
+    data = load_json(f)
+    if not isinstance(data, list):
+        continue
+    for r in data:
+        asin = r.get("asin")
+        drops = r.get("priceDrops")
+        if asin and isinstance(drops, int):
+            drop_map[asin] = drops
+
+print(f"[INFO] priceDrops loaded: {len(drop_map)} items")
+
+
+# -------------------------------------------------
+# load products
+# -------------------------------------------------
+rows: List[Dict[str, Any]] = []
+
+for f in PRODUCT_FILES:
+    data = load_json(f)
+    if not isinstance(data, list):
+        continue
+    rows.extend(data)
+
+print(f"[INFO] product rows loaded: {len(rows)}")
+
+
+# -------------------------------------------------
+# upsert
+# -------------------------------------------------
+upserted = 0
+
+for r in rows:
+    asin = r.get("asin")
     if not asin:
-        return {}
+        continue
 
-    title = p.get("title")
-    brand = p.get("brand")
-
-    buyboxprice = p.get("buyBoxPrice")
-    salesrank   = p.get("salesRank")
-    rating      = p.get("rating")
-    reviewcount = p.get("reviewCount")
-
-    # image
-    imageurl = p.get("imageUrl") or ""
-    if not imageurl:
-        images_csv = p.get("imagesCSV") or ""
-        if images_csv:
-            image_id = images_csv.split(",")[0]
-            imageurl = f"https://images-na.ssl-images-amazon.com/images/I/{image_id}.jpg"
-
-    return {
+    payload = {
+        # 必須
         "asin": asin,
-        "title": title,
-        "brand": brand,
-        "buyboxprice": buyboxprice,
+        "title": r.get("title"),
+        "brand": r.get("brand"),
+
+        # 価格
+        "buyboxprice": safe_int(r.get("buyBoxPrice")),
         "buyboxfallback": None,
-        "salesrank": salesrank,
-        "droprate": p.get("dropRate") or 0,
-        "droprateprev": p.get("dropRatePrev") or 0,
-        "imageurl": imageurl,
-        "rating": rating,
-        "reviewcount": reviewcount,
-        "score": None,   # score は次工程で計算
+
+        # ★ ここが重要（今まで入ってなかった）
+        "salesrank": safe_int(r.get("salesRank")),
+        "rating": safe_float(r.get("rating")),
+        "reviewcount": safe_int(r.get("reviewCount")),
+
+        # price drop
+        "droprate": drop_map.get(asin, 0),
+        "droprateprev": 0,
+
+        # image
+        "imageurl": r.get("imageUrl"),
     }
 
-def load_products(files: List[str]) -> List[Dict[str, Any]]:
-    acc: List[Dict[str, Any]] = []
-    for name in files:
-        try:
-            with open(name, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            print(f"[i] {name}: {len(data)} records")
-            if isinstance(data, list):
-                acc.extend(data)
-        except Exception as e:
-            print(f"[!] failed to read {name}: {e}")
+    # 空データで上書きしない
+    payload = {k: v for k, v in payload.items() if v is not None}
 
-    rows = [r for r in (to_row(p) for p in acc) if r.get("asin")]
-    dedup: Dict[str, Dict[str, Any]] = {r["asin"]: r for r in rows}
-    out = list(dedup.values())
-    print(f"[i] rows after normalize: {len(out)}")
-    return out
+    supabase.table("products").upsert(payload).execute()
+    upserted += 1
 
-def chunked(lst: List[Dict[str, Any]], size: int) -> List[List[Dict[str, Any]]]:
-    return [lst[i:i+size] for i in range(0, len(lst), size)]
-
-def upsert_with_retry(
-    tbl: Any,
-    rows: List[Dict[str, Any]],
-    on_conflict: str = "asin",
-    max_retries: int = 5
-) -> None:
-    attempt = 0
-    while True:
-        try:
-            tbl.upsert(rows, on_conflict=on_conflict).execute()
-            return
-        except Exception as e:
-            attempt += 1
-            if attempt > max_retries:
-                raise
-            sleep = min(2 * (1.7 ** (attempt - 1)), 30)
-            print(f"[warn] upsert failed (attempt {attempt}): {e} → sleep {sleep:.1f}s")
-            time.sleep(sleep)
-
-def fetch_existing_drops(client: Client, asins: List[str]) -> Dict[str, int]:
-    if not asins:
-        return {}
-    out: Dict[str, int] = {}
-    B = 500
-    for i in range(0, len(asins), B):
-        chunk = asins[i:i+B]
-        res = client.table("products").select("asin,droprate").in_("asin", chunk).execute()
-        for row in (res.data or []):
-            try:
-                out[row["asin"]] = int(row.get("droprate") or 0)
-            except Exception:
-                pass
-    return out
-
-# ===== main =====
-def main() -> None:
-    url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_SERVICE_ROLE")
-    if not url or not key:
-        raise RuntimeError("SUPABASE_URL / SUPABASE_SERVICE_ROLE が未設定です。")
-
-    client: Client = create_client(url, key)
-
-    rows = load_products(INPUT_FILES)
-    if not rows:
-        print("[i] no rows to import; exit")
-        return
-
-    drops = load_price_drops(DROPS_FILES)
-    all_asins = [r["asin"] for r in rows]
-    prev = fetch_existing_drops(client, all_asins)
-
-    # droprate 更新（priceDrops）
-    for r in rows:
-        asin = r["asin"]
-        if asin in drops:
-            new_dp = int(drops[asin])
-            old_dp = int(prev.get(asin, 0))
-            r["droprateprev"] = new_dp - old_dp
-            r["droprate"] = new_dp
-
-    table = client.table("products")
-    total = 0
-    BATCH = 1000
-    for group in chunked(rows, BATCH):
-        upsert_with_retry(table, group, on_conflict="asin")
-        total += len(group)
-        print(f"... upserted {total}/{len(rows)}")
-
-    print("🎉 import finished")
-
-if __name__ == "__main__":
-    main()
+print(f"[DONE] upserted rows: {upserted}")
