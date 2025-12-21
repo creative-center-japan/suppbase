@@ -47,11 +47,21 @@ jobs:
       - name: Prepare data dir
         run: mkdir -p data
 
-      - name: Run fetch_filtered_deals.py (protein /deal → ASIN + priceDrops)
+      - name: Run fetch_filtered_deals.py (protein /deal → ASIN)
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
         run: |
           python scripts/fetch_filtered_deals.py
+
+      # ★ 追加：ASINをDBに登録
+      - name: Register protein ASINs to DB
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          ASIN_FILE: protein_asins_deals_filtered.json
+          ASIN_CATEGORY: protein
+        run: |
+          python scripts/register_asins_from_deal.py
 
       - name: Build protein details (product stats/rating)
         env:
@@ -92,7 +102,7 @@ jobs:
       - name: Prepare data dir
         run: mkdir -p data
 
-      - name: Resume-able fetch_keepa_supplement.py (ASIN + priceDrops)
+      - name: Resume-able fetch_keepa_supplement.py (ASIN)
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
         run: |
@@ -103,6 +113,16 @@ jobs:
             --checkpoint data/asins_supplements_jp.json \
             --min-rating 3.8 \
             --min-reviews 40
+
+      # ★ 追加：ASINをDBに登録
+      - name: Register supplement ASINs to DB
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          ASIN_FILE: data/asins_supplements_jp.json
+          ASIN_CATEGORY: supplement
+        run: |
+          python scripts/register_asins_from_deal.py
 
       - name: Build supplement details
         env:
