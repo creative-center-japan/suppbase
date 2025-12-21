@@ -48,9 +48,12 @@ jobs:
               os.environ["SUPABASE_SERVICE_ROLE"]
           )
 
+          # ★ ローテーション取得（未取得 or 古いもの優先）
           res = supa.table("tracked_asins") \
               .select("asin") \
               .eq("is_active", True) \
+              .order("last_fetched_at", desc=False, nullsfirst=True) \
+              .limit(5) \
               .execute()
 
           asins = [r["asin"] for r in (res.data or [])]
@@ -75,3 +78,36 @@ jobs:
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
         run: |
           python scripts/import_to_Supabase.py
+
+      # ★ 追加：取得済み ASIN の last_fetched_at を更新（④）
+      - name: Mark fetched ASINs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+        run: |
+          python - <<'PY'
+          import os, json
+          from supabase import create_client
+          from datetime import datetime, timezone
+
+          supa = create_client(
+              os.environ["SUPABASE_URL"],
+              os.environ["SUPABASE_SERVICE_ROLE"]
+          )
+
+          with open("asins.json", "r", encoding="utf-8") as f:
+              asins = json.load(f)
+
+          if not asins:
+              print("No ASINs to mark")
+              raise SystemExit(0)
+
+          now = datetime.now(timezone.utc).isoformat()
+
+          supa.table("tracked_asins") \
+              .update({"last_fetched_at": now}) \
+              .in_("asin", asins) \
+              .execute()
+
+          print(f"✓ marked {len(asins)} ASINs as fetched")
+          PY
