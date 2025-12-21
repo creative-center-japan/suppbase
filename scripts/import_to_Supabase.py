@@ -21,14 +21,26 @@ drops = load_json("data/deal_price_drops_protein.json") if os.path.exists(
 
 now = datetime.now(timezone.utc).isoformat()
 
+# DBに存在するカラムだけを明示的に送る
+ALLOWED_KEYS = {
+    "asin",
+    "title",
+    "brand",
+    "buyBoxPrice",
+    "salesRank",
+    "rating",
+    "reviewCount",
+    "imageUrl",
+}
+
 for p in products:
-    asin = p["asin"]
+    asin = p.get("asin")
     if not asin:
         continue
 
     new_drop = drops.get(asin)
 
-    # 既存レコード取得
+    # 既存 droprate を取得
     res = (
         supa.table("products")
         .select("droprate")
@@ -45,16 +57,17 @@ for p in products:
     if new_drop is not None:
         if prev_drop is not None:
             diff = max(new_drop - prev_drop, 0)
-        else:
-            diff = 0
 
     record = {
-        **p,
+        k: v for k, v in p.items() if k in ALLOWED_KEYS
+    }
+
+    record.update({
         "droprate": new_drop,
         "droprate_prev": prev_drop,
         "droprate_diff": diff,
         "droprate_updated_at": now,
-    }
+    })
 
     (
         supa.table("products")
