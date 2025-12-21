@@ -53,7 +53,6 @@ jobs:
         run: |
           python scripts/fetch_filtered_deals.py
 
-      # ★ 追加：ASINをDBに登録
       - name: Register protein ASINs to DB
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -114,7 +113,6 @@ jobs:
             --min-rating 3.8 \
             --min-reviews 40
 
-      # ★ 追加：ASINをDBに登録
       - name: Register supplement ASINs to DB
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -263,4 +261,46 @@ jobs:
               updated += 1
 
           print(f"updated scores: {updated}")
+          PY
+
+      # ★ 追加：core ASIN のローリング更新（入退場ルール）
+      - name: Update core ASIN activity (rolling rule)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+        run: |
+          python - <<'PY'
+          import os
+          from supabase import create_client
+
+          url = os.environ["SUPABASE_URL"]
+          key = os.environ["SUPABASE_SERVICE_ROLE"]
+          supa = create_client(url, key)
+
+          stay_sql = """
+          update tracked_asins t
+          set
+            last_active_at = now(),
+            last_rank = p.salesrank,
+            last_rank_at = now()
+          from products p
+          where t.asin = p.asin
+            and t.role = 'core'
+            and (
+              p.salesrank <= 80000
+              or p.droprate_diff > 0
+            );
+          """
+
+          exit_sql = """
+          update tracked_asins
+          set is_active = false
+          where role = 'core'
+            and last_active_at < now() - interval '30 days';
+          """
+
+          supa.rpc("execute_sql", {"sql": stay_sql}).execute()
+          supa.rpc("execute_sql", {"sql": exit_sql}).execute()
+
+          print("✓ core ASIN rolling update completed")
           PY
