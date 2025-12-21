@@ -2,15 +2,6 @@ name: Keepa to Supabase sync
 
 on:
   workflow_dispatch:
-    inputs:
-      max_pages:
-        description: "Max pages for /deal"
-        required: false
-        default: "250"
-      max_minutes:
-        description: "Max minutes per scrape job"
-        required: false
-        default: "60"
   schedule:
     # JST 02:00（UTC 17:00）
     - cron: "0 17 * * *"
@@ -22,14 +13,13 @@ concurrency:
 env:
   PYTHONUNBUFFERED: "1"
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
-  MAX_PAGES: ${{ inputs.max_pages || '250' }}
-  MAX_MINUTES: ${{ inputs.max_minutes || '60' }}
 
 jobs:
-  protein:
-    name: Scrape Protein deals & details
+  update-products:
+    name: Update products via Keepa (/product only)
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 60
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -44,263 +34,44 @@ jobs:
           python -m pip install --upgrade pip
           pip install "supabase>=2.4.0" requests
 
-      - name: Prepare data dir
-        run: mkdir -p data
-
-      - name: Run fetch_filtered_deals.py (protein /deal → ASIN)
-        env:
-          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
-        run: |
-          python scripts/fetch_filtered_deals.py
-
-      - name: Register protein ASINs to DB
+      - name: Export ASINs from Supabase
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
-          ASIN_FILE: protein_asins_deals_filtered.json
-          ASIN_CATEGORY: protein
         run: |
-          python scripts/register_asins_from_deal.py
+          python - <<'PY'
+          import os, json
+          from supabase import create_client
 
-      - name: Build protein details (product stats/rating)
+          supa = create_client(
+              os.environ["SUPABASE_URL"],
+              os.environ["SUPABASE_SERVICE_ROLE"]
+          )
+
+          res = supa.table("tracked_asins") \
+              .select("asin") \
+              .eq("is_active", True) \
+              .execute()
+
+          asins = [r["asin"] for r in (res.data or [])]
+
+          with open("asins.json", "w", encoding="utf-8") as f:
+              json.dump(asins, f, ensure_ascii=False)
+
+          print(f"exported {len(asins)} ASINs")
+          PY
+
+      - name: Fetch product details from Keepa
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
-          ASIN_LIST_FILE: protein_asins_deals_filtered.json
+          ASIN_LIST_FILE: asins.json
           OUT_PRODUCT: product_details.json
         run: |
           python scripts/fetch_product_details.py
 
-      - name: Upload artifacts (protein)
-        uses: actions/upload-artifact@v4
-        with:
-          name: protein-json
-          path: |
-            protein_asins_deals_filtered.json
-            product_details.json
-            data/deal_price_drops_protein.json
-          if-no-files-found: warn
-
-  supplements:
-    name: Scrape Supplements deals & details
-    runs-on: ubuntu-latest
-    timeout-minutes: 240
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install deps
-        run: |
-          python -m pip install --upgrade pip
-          pip install "supabase>=2.4.0" requests
-
-      - name: Prepare data dir
-        run: mkdir -p data
-
-      - name: Resume-able fetch_keepa_supplement.py (ASIN)
-        env:
-          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
-        run: |
-          python scripts/fetch_keepa_supplement.py \
-            --market jp \
-            --max-pages $MAX_PAGES \
-            --max-minutes $MAX_MINUTES \
-            --checkpoint data/asins_supplements_jp.json \
-            --min-rating 3.8 \
-            --min-reviews 40
-
-      - name: Register supplement ASINs to DB
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
-          ASIN_FILE: data/asins_supplements_jp.json
-          ASIN_CATEGORY: supplement
-        run: |
-          python scripts/register_asins_from_deal.py
-
-      - name: Build supplement details
-        env:
-          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
-        run: |
-          python scripts/fetch_supplement_product_details.py \
-            --market jp \
-            --asin-file data/asins_supplements_jp.json \
-            --out supplement_product_details.json \
-            --max-asins 800 \
-            --max-minutes $MAX_MINUTES
-
-      - name: Upload artifacts (supplements)
-        uses: actions/upload-artifact@v4
-        with:
-          name: supplement-json
-          path: |
-            data/asins_supplements_jp.json
-            data/deal_price_drops_supplements.json
-            supplement_product_details.json
-          if-no-files-found: warn
-
-  import-and-score:
-    name: Import to Supabase & update score (REST)
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    needs: [protein, supplements]
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install deps
-        run: |
-          python -m pip install --upgrade pip
-          pip install "supabase>=2.4.0" requests
-
-      - name: Download protein artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: protein-json
-          path: .
-
-      - name: Download supplement artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: supplement-json
-          path: .
-
-      - name: Show files (debug)
-        run: |
-          set -euxo pipefail
-          echo "== pwd ==" && pwd
-          echo "== repo root ==" && ls -al
-          echo "== data dir ==" && (ls -al data || true)
-
-      - name: Import to Supabase (UPSERT + droprate diff)
+      - name: Import to Supabase
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
         run: |
           python scripts/import_to_Supabase.py
-
-      - name: Compute & update score via Supabase API (UPDATE only)
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
-        run: |
-          python - <<'PY'
-          import os
-          from math import isfinite
-          from supabase import create_client
-
-          url = os.environ["SUPABASE_URL"]
-          key = os.environ["SUPABASE_SERVICE_ROLE"]
-          supa = create_client(url, key)
-
-          rows = []
-          page, size = 0, 1000
-
-          while True:
-              res = (
-                  supa.table("products")
-                  .select("asin, droprate_diff, salesrank, reviewcount, rating")
-                  .range(page * size, page * size + size - 1)
-                  .execute()
-              )
-              batch = res.data or []
-              if not batch:
-                  break
-              rows.extend(batch)
-              if len(batch) < size:
-                  break
-              page += 1
-
-          def vals(col):
-              return [r[col] for r in rows if r.get(col) is not None]
-
-          def norm(x, lo, hi, invert=False):
-              if x is None or lo is None or hi is None or hi == lo:
-                  return 0.0
-              v = (x - lo) / (hi - lo)
-              if not isfinite(v):
-                  return 0.0
-              if invert:
-                  v = 1.0 - v
-              return min(max(v, 0.0), 1.0)
-
-          drops = vals("droprate_diff")
-          ranks = vals("salesrank")
-          revs  = vals("reviewcount")
-          rats  = vals("rating")
-
-          min_d, max_d = (min(drops), max(drops)) if drops else (None, None)
-          min_r, max_r = (min(ranks), max(ranks)) if ranks else (None, None)
-          min_v, max_v = (min(revs), max(revs)) if revs else (None, None)
-          min_t, max_t = (min(rats), max(rats)) if rats else (None, None)
-
-          updated = 0
-
-          for r in rows:
-              score = 100 * (
-                  0.40 * norm(r.get("droprate_diff"), min_d, max_d) +
-                  0.30 * norm(r.get("salesrank"), min_r, max_r, invert=True) +
-                  0.20 * norm(r.get("reviewcount"), min_v, max_v) +
-                  0.10 * norm(r.get("rating"), min_t, max_t)
-              )
-
-              supa.table("products").update(
-                  {"score": round(score, 1)}
-              ).eq("asin", r["asin"]).execute()
-
-              updated += 1
-
-          print(f"updated scores: {updated}")
-          PY
-
-      # ★ 追加：core ASIN のローリング更新（入退場ルール）
-      - name: Update core ASIN activity (rolling rule)
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
-        run: |
-          python - <<'PY'
-          import os
-          from supabase import create_client
-
-          url = os.environ["SUPABASE_URL"]
-          key = os.environ["SUPABASE_SERVICE_ROLE"]
-          supa = create_client(url, key)
-
-          stay_sql = """
-          update tracked_asins t
-          set
-            last_active_at = now(),
-            last_rank = p.salesrank,
-            last_rank_at = now()
-          from products p
-          where t.asin = p.asin
-            and t.role = 'core'
-            and (
-              p.salesrank <= 80000
-              or p.droprate_diff > 0
-            );
-          """
-
-          exit_sql = """
-          update tracked_asins
-          set is_active = false
-          where role = 'core'
-            and last_active_at < now() - interval '30 days';
-          """
-
-          supa.rpc("execute_sql", {"sql": stay_sql}).execute()
-          supa.rpc("execute_sql", {"sql": exit_sql}).execute()
-
-          print("✓ core ASIN rolling update completed")
-          PY
