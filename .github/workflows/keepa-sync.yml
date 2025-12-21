@@ -3,8 +3,11 @@ name: Keepa to Supabase sync
 on:
   workflow_dispatch:
   schedule:
-    # JST 02:00（UTC 17:00）
-    - cron: "0 17 * * *"
+    # JST 02:00 / 08:00 / 14:00 / 20:00
+    - cron: "0 17 * * *"   # 02:00 JST
+    - cron: "0 23 * * *"   # 08:00 JST
+    - cron: "0 5 * * *"    # 14:00 JST
+    - cron: "0 11 * * *"   # 20:00 JST
 
 concurrency:
   group: keepa-supabase-sync
@@ -21,6 +24,9 @@ jobs:
     timeout-minutes: 60
 
     steps:
+      # -------------------------------------------------
+      # Setup
+      # -------------------------------------------------
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -34,7 +40,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install "supabase>=2.4.0" requests
 
-      - name: Export ASINs from Supabase
+      # -------------------------------------------------
+      # ① ASIN をローテーション取得（3件）
+      # -------------------------------------------------
+      - name: Export ASINs from Supabase (rotation)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
@@ -48,22 +57,27 @@ jobs:
               os.environ["SUPABASE_SERVICE_ROLE"]
           )
 
-          # ★ ローテーション取得（未取得 or 古いもの優先）
-          res = supa.table("tracked_asins") \
-              .select("asin") \
-              .eq("is_active", True) \
-              .order("last_fetched_at", desc=False, nullsfirst=True) \
-              .limit(5) \
+          # 未取得 or 古い ASIN を優先して 3 件だけ取得
+          res = (
+              supa.table("tracked_asins")
+              .select("asin")
+              .eq("is_active", True)
+              .order("last_fetched_at", desc=False, nullsfirst=True)
+              .limit(3)
               .execute()
+          )
 
           asins = [r["asin"] for r in (res.data or [])]
 
           with open("asins.json", "w", encoding="utf-8") as f:
               json.dump(asins, f, ensure_ascii=False)
 
-          print(f"exported {len(asins)} ASINs")
+          print(f"exported {len(asins)} ASINs: {asins}")
           PY
 
+      # -------------------------------------------------
+      # ② Keepa /product で商品情報取得
+      # -------------------------------------------------
       - name: Fetch product details from Keepa
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
@@ -72,6 +86,9 @@ jobs:
         run: |
           python scripts/fetch_product_details.py
 
+      # -------------------------------------------------
+      # ③ Supabase products テーブル更新
+      # -------------------------------------------------
       - name: Import to Supabase
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -79,7 +96,9 @@ jobs:
         run: |
           python scripts/import_to_Supabase.py
 
-      # ★ 追加：取得済み ASIN の last_fetched_at を更新（④）
+      # -------------------------------------------------
+      # ④ 取得済み ASIN に last_fetched_at を付与（必須）
+      # -------------------------------------------------
       - name: Mark fetched ASINs
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
