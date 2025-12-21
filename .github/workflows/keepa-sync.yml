@@ -52,9 +52,6 @@ jobs:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
         run: |
           python scripts/fetch_filtered_deals.py
-        # generates:
-        # - protein_asins_deals_filtered.json
-        # - data/deal_price_drops_protein.json
 
       - name: Build protein details (product stats/rating)
         env:
@@ -106,9 +103,6 @@ jobs:
             --checkpoint data/asins_supplements_jp.json \
             --min-rating 3.8 \
             --min-reviews 40
-        # generates:
-        # - data/asins_supplements_jp.json
-        # - data/deal_price_drops_supplements.json
 
       - name: Build supplement details
         env:
@@ -136,10 +130,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     needs: [protein, supplements]
-
-    env:
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
 
     steps:
       - name: Checkout
@@ -174,7 +164,7 @@ jobs:
           echo "== repo root ==" && ls -al
           echo "== data dir ==" && (ls -al data || true)
 
-      - name: Import to Supabase (UPSERT + droprate=priceDrops + diff) via supabase-py
+      - name: Import to Supabase (UPSERT + droprate diff)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
@@ -189,66 +179,68 @@ jobs:
           python - <<'PY'
           import os
           from math import isfinite
-          from typing import List, Optional
           from supabase import create_client
 
           url = os.environ["SUPABASE_URL"]
           key = os.environ["SUPABASE_SERVICE_ROLE"]
           supa = create_client(url, key)
 
-          # 1) 既存行のみ取得（必要列に限定）
+          rows = []
           page, size = 0, 1000
-          rows: List[dict] = []
+
           while True:
-              res = supa.table("products").select(
-                  "asin, droprate, salesrank, reviewcount, rating"
-              ).range(page*size, page*size + size - 1).execute()
+              res = (
+                  supa.table("products")
+                  .select("asin, droprate_diff, salesrank, reviewcount, rating")
+                  .range(page * size, page * size + size - 1)
+                  .execute()
+              )
               batch = res.data or []
-              if not batch: break
+              if not batch:
+                  break
               rows.extend(batch)
-              if len(batch) < size: break
+              if len(batch) < size:
+                  break
               page += 1
 
-          if not rows:
-              print("updated scores: 0 (no rows)")
-              raise SystemExit(0)
+          def vals(col):
+              return [r[col] for r in rows if r.get(col) is not None]
 
-          # 2) min/max をメモリで集計
-          def _vals(col: str): return [r[col] for r in rows if r.get(col) is not None]
-          def _min(v): return min(v) if v else None
-          def _max(v): return max(v) if v else None
-
-          drops = _vals("droprate");  ranks = _vals("salesrank")
-          revs  = _vals("reviewcount"); rats = _vals("rating")
-
-          min_drop, max_drop = _min(drops), _max(drops)
-          min_rank, max_rank = _min(ranks), _max(ranks)
-          min_rev,  max_rev  = _min(revs),  _max(revs)
-          min_rt,   max_rt   = _min(rats),  _max(rats)
-
-          def norm(x: Optional[float], lo: Optional[float], hi: Optional[float], invert=False) -> float:
-              if x is None or lo is None or hi is None or hi == lo: return 0.0
+          def norm(x, lo, hi, invert=False):
+              if x is None or lo is None or hi is None or hi == lo:
+                  return 0.0
               v = (x - lo) / (hi - lo)
-              if not isfinite(v): return 0.0
-              if invert: v = 1.0 - v
-              return 0.0 if v < 0 else 1.0 if v > 1 else v
+              if not isfinite(v):
+                  return 0.0
+              if invert:
+                  v = 1.0 - v
+              return min(max(v, 0.0), 1.0)
 
-          # 3) 既存行のみ UPDATE（INSERTしない）
-          updated, skipped = 0, 0
-          for rec in rows:
-              asin = rec.get("asin")
-              if not asin: 
-                  skipped += 1
-                  continue
+          drops = vals("droprate_diff")
+          ranks = vals("salesrank")
+          revs  = vals("reviewcount")
+          rats  = vals("rating")
 
-              n_drop = norm(rec.get("droprate"),   min_drop, max_drop, invert=False)
-              n_rank = norm(rec.get("salesrank"),  min_rank, max_rank, invert=True)
-              n_rev  = norm(rec.get("reviewcount"),min_rev,  max_rev,  invert=False)
-              n_rt   = norm(rec.get("rating"),     min_rt,   max_rt,   invert=False)
-              score  = round(100.0*(0.40*n_drop + 0.30*n_rank + 0.20*n_rev + 0.10*n_rt), 1)
+          min_d, max_d = (min(drops), max(drops)) if drops else (None, None)
+          min_r, max_r = (min(ranks), max(ranks)) if ranks else (None, None)
+          min_v, max_v = (min(revs), max(revs)) if revs else (None, None)
+          min_t, max_t = (min(rats), max(rats)) if rats else (None, None)
 
-              supa.table("products").update({"score": score}).eq("asin", asin).execute()
+          updated = 0
+
+          for r in rows:
+              score = 100 * (
+                  0.40 * norm(r.get("droprate_diff"), min_d, max_d) +
+                  0.30 * norm(r.get("salesrank"), min_r, max_r, invert=True) +
+                  0.20 * norm(r.get("reviewcount"), min_v, max_v) +
+                  0.10 * norm(r.get("rating"), min_t, max_t)
+              )
+
+              supa.table("products").update(
+                  {"score": round(score, 1)}
+              ).eq("asin", r["asin"]).execute()
+
               updated += 1
 
-          print(f"updated scores: {updated}, skipped: {skipped}")
+          print(f"updated scores: {updated}")
           PY

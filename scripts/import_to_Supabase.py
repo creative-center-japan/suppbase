@@ -1,127 +1,65 @@
+# scripts/import_to_Supabase.py
 import os
 import json
+from datetime import datetime, timezone
 from supabase import create_client
-from typing import Dict, Any, List
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_SERVICE_ROLE = os.environ.get("SUPABASE_SERVICE_ROLE")
+SUPABASE_URL = os.environ["SUPABASE_URL"]
+SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE"]
 
-if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE:
-    raise RuntimeError("SUPABASE_URL / SUPABASE_SERVICE_ROLE is not set")
+supa = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE)
-
-# ==== 入力ファイル ====
-PRODUCT_FILES = [
-    "product_details.json",
-    "supplement_product_details.json",
-]
-
-# price drop ファイル（存在すれば使用）
-DROPS_FILES = [
-    "data/deal_price_drops_protein.json",
-    "data/deal_price_drops_supplements.json",
-]
-
-
-# -------------------------------------------------
-# util
-# -------------------------------------------------
-def load_json(path: str):
-    if not os.path.exists(path):
-        return None
+def load_json(path):
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
+# ---- load artifacts ----
+products = load_json("product_details.json")
+drops = load_json("data/deal_price_drops_protein.json") if os.path.exists(
+    "data/deal_price_drops_protein.json"
+) else {}
 
-def safe_int(v):
-    try:
-        if v is None:
-            return None
-        v = int(v)
-        return v if v >= 0 else None
-    except Exception:
-        return None
+now = datetime.now(timezone.utc).isoformat()
 
-
-def safe_float(v):
-    try:
-        if v is None:
-            return None
-        return float(v)
-    except Exception:
-        return None
-
-
-# -------------------------------------------------
-# load priceDrops
-# -------------------------------------------------
-drop_map: Dict[str, int] = {}
-
-for f in DROPS_FILES:
-    data = load_json(f)
-    if not isinstance(data, list):
-        continue
-    for r in data:
-        asin = r.get("asin")
-        drops = r.get("priceDrops")
-        if asin and isinstance(drops, int):
-            drop_map[asin] = drops
-
-print(f"[INFO] priceDrops loaded: {len(drop_map)} items")
-
-
-# -------------------------------------------------
-# load products
-# -------------------------------------------------
-rows: List[Dict[str, Any]] = []
-
-for f in PRODUCT_FILES:
-    data = load_json(f)
-    if not isinstance(data, list):
-        continue
-    rows.extend(data)
-
-print(f"[INFO] product rows loaded: {len(rows)}")
-
-
-# -------------------------------------------------
-# upsert
-# -------------------------------------------------
-upserted = 0
-
-for r in rows:
-    asin = r.get("asin")
+for p in products:
+    asin = p["asin"]
     if not asin:
         continue
 
-    payload = {
-        # 必須
-        "asin": asin,
-        "title": r.get("title"),
-        "brand": r.get("brand"),
+    new_drop = drops.get(asin)
 
-        # 価格
-        "buyboxprice": safe_int(r.get("buyBoxPrice")),
-        "buyboxfallback": None,
+    # 既存レコード取得
+    res = (
+        supa.table("products")
+        .select("droprate")
+        .eq("asin", asin)
+        .limit(1)
+        .execute()
+    )
 
-        # ★ ここが重要（今まで入ってなかった）
-        "salesrank": safe_int(r.get("salesRank")),
-        "rating": safe_float(r.get("rating")),
-        "reviewcount": safe_int(r.get("reviewCount")),
+    prev_drop = None
+    if res.data:
+        prev_drop = res.data[0].get("droprate")
 
-        # price drop
-        "droprate": drop_map.get(asin, 0),
-        "droprateprev": 0,
+    diff = 0
+    if new_drop is not None:
+        if prev_drop is not None:
+            diff = max(new_drop - prev_drop, 0)
+        else:
+            diff = 0
 
-        # image
-        "imageurl": r.get("imageUrl"),
+    record = {
+        **p,
+        "droprate": new_drop,
+        "droprate_prev": prev_drop,
+        "droprate_diff": diff,
+        "droprate_updated_at": now,
     }
 
-    # 空データで上書きしない
-    payload = {k: v for k, v in payload.items() if v is not None}
+    (
+        supa.table("products")
+        .upsert(record, on_conflict="asin")
+        .execute()
+    )
 
-    supabase.table("products").upsert(payload).execute()
-    upserted += 1
-
-print(f"[DONE] upserted rows: {upserted}")
+print("✓ import & droprate diff updated")
