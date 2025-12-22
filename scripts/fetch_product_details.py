@@ -1,67 +1,28 @@
-# scripts/fetch_product_details.py
 import os
 import json
 import time
 import requests
 from datetime import datetime, timezone
-from typing import List, Dict, Any
 
 API_KEY = os.environ["KEEPA_API_KEY"]
-DOMAIN_ID = 5  # Amazon JP
+DOMAIN_ID = 5  # JP
 
-ASIN_LIST_FILE = os.environ.get("ASIN_LIST_FILE", "asins.json")
-OUT_PRODUCT = os.environ.get("OUT_PRODUCT", "product_details.json")
-
-KEEPA_PRODUCT_URL = "https://api.keepa.com/product"
-
-
-def chunk(lst: List[str], size: int):
-    for i in range(0, len(lst), size):
-        yield lst[i:i + size]
-
+ASIN_FILE = "asins_protein.json"
+OUT_FILE = "product_details.json"
 
 def safe_int(v):
-    if isinstance(v, int) and v > 0:
-        return v
-    return None
+    return v if isinstance(v, int) and v > 0 else None
 
-
-def map_product(p: Dict[str, Any]) -> Dict[str, Any]:
-    stats = p.get("stats") or {}
-
-    # 価格は「buyBox → avg90」のみ使用（最安値系は使わない）
-    price = (
-        safe_int(stats.get("buyBoxPrice"))
-        or safe_int(stats.get("avg90"))
-    )
-
-    # salesRank は履歴があれば末尾、それ以外は直値
-    sales_rank = safe_int(p.get("salesRank"))
-    if sales_rank is None:
-        ranks = (p.get("salesRanks") or {}).get("0")
-        if isinstance(ranks, list) and ranks:
-            sales_rank = safe_int(ranks[-1])
-
-    return {
-        "asin": p.get("asin"),
-        "price": price,
-        "sales_rank": sales_rank,
-        "rating": stats.get("rating"),
-        "review_count": stats.get("reviewCount"),
-        "fetched_at": datetime.now(timezone.utc).isoformat(),
-    }
-
-
-def fetch_products(asins: List[str]) -> List[Dict[str, Any]]:
-    results: List[Dict[str, Any]] = []
-
-    for group in chunk(asins, 50):
+def fetch(asins):
+    rows = []
+    for i in range(0, len(asins), 50):
+        batch = asins[i:i+50]
         r = requests.get(
-            KEEPA_PRODUCT_URL,
+            "https://api.keepa.com/product",
             params={
                 "key": API_KEY,
                 "domain": DOMAIN_ID,
-                "asin": ",".join(group),
+                "asin": ",".join(batch),
                 "stats": 1,
                 "buybox": 1,
                 "history": 0,
@@ -72,32 +33,26 @@ def fetch_products(asins: List[str]) -> List[Dict[str, Any]]:
         data = r.json()
 
         for p in data.get("products", []):
-            row = map_product(p)
-            if row.get("asin"):
-                results.append(row)
+            stats = p.get("stats") or {}
+            rows.append({
+                "asin": p.get("asin"),
+                "price": safe_int(stats.get("buyBoxPrice")) or safe_int(stats.get("avg90")),
+                "sales_rank": safe_int(p.get("salesRank")),
+                "rating": stats.get("rating"),
+                "review_count": stats.get("reviewCount"),
+                "fetched_at": datetime.now(timezone.utc).isoformat(),
+            })
 
-        time.sleep(1.2)
+        time.sleep(90)  # ★ Keepa 制限対策
 
-    return results
+    return rows
 
+with open(ASIN_FILE, "r", encoding="utf-8") as f:
+    asins = json.load(f)
 
-def main():
-    if not os.path.exists(ASIN_LIST_FILE):
-        raise RuntimeError("ASIN list file not found")
+rows = fetch(asins)
 
-    with open(ASIN_LIST_FILE, "r", encoding="utf-8") as f:
-        asins = json.load(f)
+with open(OUT_FILE, "w", encoding="utf-8") as f:
+    json.dump(rows, f, ensure_ascii=False, indent=2)
 
-    if not isinstance(asins, list):
-        raise RuntimeError("ASIN list must be a list")
-
-    products = fetch_products(asins)
-
-    with open(OUT_PRODUCT, "w", encoding="utf-8") as f:
-        json.dump(products, f, ensure_ascii=False, indent=2)
-
-    print(f"✓ fetched {len(products)} records")
-
-
-if __name__ == "__main__":
-    main()
+print(f"[OK] protein fetched {len(rows)} rows")

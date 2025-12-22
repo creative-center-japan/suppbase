@@ -3,130 +3,53 @@ name: Keepa to Supabase sync
 on:
   workflow_dispatch:
   schedule:
-    # JST 02:00 / 08:00 / 14:00 / 20:00
-    - cron: "0 17 * * *"   # 02:00 JST
-    - cron: "0 23 * * *"   # 08:00 JST
-    - cron: "0 5 * * *"    # 14:00 JST
-    - cron: "0 11 * * *"   # 20:00 JST
-
-concurrency:
-  group: keepa-supabase-sync
-  cancel-in-progress: false
-
-env:
-  PYTHONUNBUFFERED: "1"
-  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    - cron: "0 */6 * * *"   # 6時間おき
 
 jobs:
-  update-products:
-    name: Update products via Keepa (/product only)
+  sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 350
 
     steps:
-      # -------------------------------------------------
-      # Setup
-      # -------------------------------------------------
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Install deps
         run: |
-          python -m pip install --upgrade pip
-          pip install "supabase>=2.4.0" requests
+          pip install requests supabase
 
-      # -------------------------------------------------
-      # ① ASIN をローテーション取得（3件）
-      # -------------------------------------------------
-      - name: Export ASINs from Supabase (rotation)
+      - name: Export ASINs (protein)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
         run: |
-          python - <<'PY'
-          import os, json
-          from supabase import create_client
+          python scripts/export_asins.py protein 30
 
-          supa = create_client(
-              os.environ["SUPABASE_URL"],
-              os.environ["SUPABASE_SERVICE_ROLE"]
-          )
+      - name: Export ASINs (supplement)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+        run: |
+          python scripts/export_asins.py supplement 30
 
-          # 未取得 or 古い ASIN を優先して 3 件だけ取得
-          res = (
-              supa.table("tracked_asins")
-              .select("asin")
-              .eq("is_active", True)
-              .order("last_fetched_at", desc=False, nullsfirst=True)
-              .limit(3)
-              .execute()
-          )
-
-          asins = [r["asin"] for r in (res.data or [])]
-
-          with open("asins.json", "w", encoding="utf-8") as f:
-              json.dump(asins, f, ensure_ascii=False)
-
-          print(f"exported {len(asins)} ASINs: {asins}")
-          PY
-
-      # -------------------------------------------------
-      # ② Keepa /product で商品情報取得
-      # -------------------------------------------------
-      - name: Fetch product details from Keepa
+      - name: Fetch protein
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
-          ASIN_LIST_FILE: asins.json
-          OUT_PRODUCT: product_details.json
         run: |
           python scripts/fetch_product_details.py
 
-      # -------------------------------------------------
-      # ③ Supabase products テーブル更新
-      # -------------------------------------------------
+      - name: Fetch supplement
+        env:
+          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+        run: |
+          python scripts/fetch_supplement_product_details.py
+
       - name: Import to Supabase
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
         run: |
           python scripts/import_to_Supabase.py
-
-      # -------------------------------------------------
-      # ④ 取得済み ASIN に last_fetched_at を付与（必須）
-      # -------------------------------------------------
-      - name: Mark fetched ASINs
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
-        run: |
-          python - <<'PY'
-          import os, json
-          from supabase import create_client
-          from datetime import datetime, timezone
-
-          supa = create_client(
-              os.environ["SUPABASE_URL"],
-              os.environ["SUPABASE_SERVICE_ROLE"]
-          )
-
-          with open("asins.json", "r", encoding="utf-8") as f:
-              asins = json.load(f)
-
-          if not asins:
-              print("No ASINs to mark")
-              raise SystemExit(0)
-
-          now = datetime.now(timezone.utc).isoformat()
-
-          supa.table("tracked_asins") \
-              .update({"last_fetched_at": now}) \
-              .in_("asin", asins) \
-              .execute()
-
-          print(f"✓ marked {len(asins)} ASINs as fetched")
-          PY
