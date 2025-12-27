@@ -57,7 +57,7 @@ TITLE_KEYWORDS = [
     "分岐鎖",
 ]
 
-MAX_PAGES = 1        # まずは 1 ページ
+MAX_PAGES = 3        # まずは 1 ページ
 SLEEP_PER_CALL = 30  # Keepa対策
 
 # ===============================

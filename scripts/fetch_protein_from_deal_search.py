@@ -69,7 +69,7 @@ TITLE_KEYWORDS = [
     "wpi",
 ]
 
-MAX_PAGES = 1        # まずは 1 ページだけ
+MAX_PAGES = 3        # まずは 1 ページだけ
 SLEEP_PER_CALL = 30  # Keepa対策
 
 # ===============================
