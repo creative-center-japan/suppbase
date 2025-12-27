@@ -21,19 +21,29 @@ jobs:
         run: |
           pip install requests supabase
 
+      # ★ 追加：protein ASIN を Keepa Deals から収集
+      - name: Collect protein ASINs from Keepa Deals
+        env:
+          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+        run: |
+          python scripts/fetch_protein_from_deals.py
+
+      # ★ LIMIT を増やす
       - name: Export ASINs (protein)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
         run: |
-          python scripts/export_asins.py protein 30
+          python scripts/export_asins.py protein 100
 
       - name: Export ASINs (supplement)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
         run: |
-          python scripts/export_asins.py supplement 30
+          python scripts/export_asins.py supplement 50
 
       - name: Fetch protein
         env:

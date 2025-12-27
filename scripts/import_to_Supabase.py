@@ -1,5 +1,4 @@
-import os
-import json
+import os, json
 from supabase import create_client
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]

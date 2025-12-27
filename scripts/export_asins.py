@@ -6,7 +6,6 @@ from supabase import create_client
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE"]
 
-# python export_asins.py protein 30
 CATEGORY = sys.argv[1]
 LIMIT = int(sys.argv[2]) if len(sys.argv) > 2 else 30
 
