@@ -5,7 +5,7 @@ import requests
 from datetime import datetime, timezone
 
 API_KEY = os.environ["KEEPA_API_KEY"]
-DOMAIN_ID = 5  # JP
+DOMAIN_ID = 5
 
 ASIN_FILE = "asins_supplement.json"
 OUT_FILE = "supplement_product_details.json"
@@ -15,21 +15,34 @@ def safe_int(v):
 
 def fetch(asins):
     rows = []
+
     for i in range(0, len(asins), 50):
         batch = asins[i:i+50]
-        r = requests.get(
-            "https://api.keepa.com/product",
-            params={
-                "key": API_KEY,
-                "domain": DOMAIN_ID,
-                "asin": ",".join(batch),
-                "stats": 1,
-                "buybox": 1,
-                "history": 0,
-            },
-            timeout=30,
-        )
-        r.raise_for_status()
+
+        while True:
+            r = requests.get(
+                "https://api.keepa.com/product",
+                params={
+                    "key": API_KEY,
+                    "domain": DOMAIN_ID,
+                    "asin": ",".join(batch),
+                    "stats": 1,
+                    "buybox": 1,
+                    "history": 0,
+                },
+                timeout=60,
+            )
+
+            if r.status_code == 429:
+                refill_ms = r.json().get("refillIn", 60000)
+                wait_sec = int(refill_ms / 1000) + 5
+                print(f"[429] sleep {wait_sec}s")
+                time.sleep(wait_sec)
+                continue
+
+            r.raise_for_status()
+            break
+
         data = r.json()
 
         for p in data.get("products", []):
@@ -43,7 +56,8 @@ def fetch(asins):
                 "fetched_at": datetime.now(timezone.utc).isoformat(),
             })
 
-        time.sleep(90)
+        # ★ 通常時30秒
+        time.sleep(30)
 
     return rows
 
