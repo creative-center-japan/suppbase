@@ -5,26 +5,39 @@ import requests
 from datetime import datetime, timezone
 from supabase import create_client
 
-# ===============================
-# 環境変数
-# ===============================
 KEEPA_API_KEY = os.environ["KEEPA_API_KEY"]
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE"]
 
-DOMAIN_ID = 5  # JP
+DOMAIN_ID = 5
 DEAL_URL = "https://api.keepa.com/deal"
 PRODUCT_URL = "https://api.keepa.com/product"
 
 supa = create_client(SUPABASE_URL, SUPABASE_KEY)
 now = datetime.now(timezone.utc).isoformat()
 
-# ===============================
-# 判定ロジック
-# ===============================
+# ========= 制御パラメータ =========
+MAX_DEAL_PAGES = 1        # ★ 1 run あたり何ページまで進むか
+MAX_PRODUCT_429 = 10      # ★ product 429 が何回続いたら諦める
+BASE_SLEEP = 30
+
+# ========= 判定 =========
 def has_isolate_keyword(title: str) -> bool:
     t = title.lower()
     return any(k in t for k in ["isolate", "アイソレート", "ソイレート", "wpi"])
+
+def is_protein_target(p):
+    if p.get("productType") != "PROTEIN_SUPPLEMENT_POWDER":
+        return False
+
+    cats = " ".join(c.get("name", "") for c in p.get("categoryTree", []))
+    title = p.get("title") or ""
+
+    return (
+        "ソイプロテイン" in cats
+        or "ホエイプロテイン" in cats
+        or has_isolate_keyword(title)
+    )
 
 def protein_sub_category(p):
     cats = " ".join(c.get("name", "") for c in p.get("categoryTree", []))
@@ -38,58 +51,38 @@ def protein_sub_category(p):
         return "isolate"
     return "other"
 
-def is_protein_target(p):
-    # Keepaの正式タイプでまず足切り
-    if p.get("productType") != "PROTEIN_SUPPLEMENT_POWDER":
-        return False
-
-    cats = " ".join(c.get("name", "") for c in p.get("categoryTree", []))
-    title = p.get("title") or ""
-
-    return (
-        "ソイプロテイン" in cats
-        or "ホエイプロテイン" in cats
-        or has_isolate_keyword(title)
-    )
-
-# ===============================
-# Keepa API
-# ===============================
-def fetch_deals(page: int):
-    """
-    /deal は selection 必須
-    """
+# ========= API =========
+def fetch_deals(page):
     selection = {
         "page": page,
         "domainId": DOMAIN_ID,
-        # プロテイン配下を広めに拾う
-        "includeCategories": [
-            3457069051,   # プロテイン
-            10504294051,  # スポーツ栄養
-        ],
+        "includeCategories": [3457069051, 10504294051],
         "priceTypes": 3,
         "sortType": 4,
         "filterErotic": True,
-        "isRangeEnabled": True,
-        "isFilterEnabled": True,
     }
 
-    r = requests.get(
-        DEAL_URL,
-        params={
-            "key": KEEPA_API_KEY,
-            "selection": json.dumps(selection, separators=(",", ":")),
-        },
-        timeout=60,
-    )
+    while True:
+        r = requests.get(
+            DEAL_URL,
+            params={
+                "key": KEEPA_API_KEY,
+                "selection": json.dumps(selection, separators=(",", ":")),
+            },
+            timeout=60,
+        )
 
-    r.raise_for_status()
-    return r.json()
+        if r.status_code == 429:
+            print("[429] deal API rate limited. sleep 120s")
+            time.sleep(120)
+            return None  # ★ deal は無理に進めない
+
+        r.raise_for_status()
+        return r.json()
 
 def fetch_products(asins):
-    """
-    /product の 429 対応込み（ここが今回の修正点）
-    """
+    product_429_count = 0
+
     while True:
         r = requests.get(
             PRODUCT_URL,
@@ -103,55 +96,37 @@ def fetch_products(asins):
             timeout=60,
         )
 
-        # ★ レート制限対応
         if r.status_code == 429:
-            try:
-                refill_ms = r.json().get("refillIn", 60000)
-            except Exception:
-                refill_ms = 60000
+            product_429_count += 1
+            print(f"[429] product API rate limited ({product_429_count})")
 
-            wait_sec = int(refill_ms / 1000) + 5
-            print(f"[429] product API rate limited. sleep {wait_sec}s")
-            time.sleep(wait_sec)
+            if product_429_count >= MAX_PRODUCT_429:
+                print("[STOP] too many product 429s. stop this run.")
+                return None
+
+            time.sleep(60)
             continue
 
         r.raise_for_status()
         return r.json().get("products", [])
 
-# ===============================
-# メイン処理
-# ===============================
+# ========= main =========
 def main():
-    collected = set()
-    page = 0
+    collected = 0
 
-    while True:
+    for page in range(MAX_DEAL_PAGES):
         print(f"[i] fetch deals page={page}")
         data = fetch_deals(page)
+        if not data:
+            break
+
         deals = data.get("deals")
+        items = deals.get("dr", []) if isinstance(deals, dict) else deals
 
-        if not deals:
-            print("[i] no more deals")
-            break
-
-        # deals は dict / list 両対応
-        if isinstance(deals, dict):
-            items = deals.get("dr", [])
-        else:
-            items = deals
-
-        asins = []
-        for d in items:
-            if isinstance(d, dict):
-                asin = d.get("asin")
-            else:
-                asin = d
-            if asin:
-                asins.append(asin)
-
-        if not asins:
-            print("[i] no ASINs in this page")
-            break
+        asins = [
+            d.get("asin") if isinstance(d, dict) else d
+            for d in items if d
+        ]
 
         print(f"[i] page {page} collected {len(asins)} ASINs")
 
@@ -159,17 +134,17 @@ def main():
             batch = asins[i:i+50]
             products = fetch_products(batch)
 
+            if products is None:
+                print("[i] stop product loop")
+                return
+
             rows = []
             for p in products:
                 if not is_protein_target(p):
                     continue
 
-                asin = p["asin"]
-                if asin in collected:
-                    continue
-
                 rows.append({
-                    "asin": asin,
+                    "asin": p["asin"],
                     "category": "protein",
                     "sub_category": protein_sub_category(p),
                     "source": "keepa_deal",
@@ -177,7 +152,6 @@ def main():
                     "last_seen_at": now,
                     "is_active": True,
                 })
-                collected.add(asin)
 
             if rows:
                 supa.table("tracked_asins").upsert(
@@ -185,15 +159,12 @@ def main():
                     on_conflict="asin",
                     returning="minimal"
                 ).execute()
+                collected += len(rows)
                 print(f"[OK] registered {len(rows)} protein ASINs")
 
-            # ★ 通常時も予防的に待つ
-            time.sleep(30)
+            time.sleep(BASE_SLEEP)
 
-        page += 1
-        time.sleep(5)
-
-    print(f"[DONE] total protein ASINs registered: {len(collected)}")
+    print(f"[DONE] registered {collected} protein ASINs")
 
 if __name__ == "__main__":
     main()
