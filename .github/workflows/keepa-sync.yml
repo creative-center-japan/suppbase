@@ -21,7 +21,8 @@ jobs:
         run: |
           pip install requests supabase
 
-      # ★ 入口：Deal API（Web検索完全再現）
+      # ===== ASIN 収集フェーズ =====
+
       - name: Collect protein ASINs from Deal search
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
@@ -29,6 +30,16 @@ jobs:
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
         run: |
           python scripts/fetch_protein_from_deal_search.py
+
+      - name: Collect supplement ASINs from Deal search (BCAA)
+        env:
+          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+        run: |
+          python scripts/fetch_supplement_from_deal_search.py
+
+      # ===== ASIN エクスポート =====
 
       - name: Export ASINs (protein)
         env:
@@ -44,17 +55,21 @@ jobs:
         run: |
           python scripts/export_asins.py supplement 50
 
-      - name: Fetch protein
+      # ===== 詳細データ取得 =====
+
+      - name: Fetch protein details
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
         run: |
           python scripts/fetch_product_details.py
 
-      - name: Fetch supplement
+      - name: Fetch supplement details
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
         run: |
           python scripts/fetch_supplement_product_details.py
+
+      # ===== DB 反映 =====
 
       - name: Import to Supabase
         env:
