@@ -16,7 +16,7 @@ PRODUCT_URL = "https://api.keepa.com/product"
 supa = create_client(SUPABASE_URL, SUPABASE_KEY)
 now = datetime.now(timezone.utc).isoformat()
 
-# ---------- 判定ロジック ----------
+# ========= 判定ロジック =========
 
 def has_isolate_keyword(title: str) -> bool:
     t = title.lower()
@@ -41,27 +41,39 @@ def is_protein_target(p):
     cats = " ".join(c.get("name", "") for c in p.get("categoryTree", []))
     title = p.get("title") or ""
 
-    if "ソイプロテイン" in cats:
-        return True
-    if "ホエイプロテイン" in cats:
-        return True
-    if has_isolate_keyword(title):
-        return True
+    return (
+        "ソイプロテイン" in cats
+        or "ホエイプロテイン" in cats
+        or has_isolate_keyword(title)
+    )
 
-    return False
-
-# ---------- Keepa API ----------
+# ========= Keepa API =========
 
 def fetch_deals(page: int):
+    selection = {
+        "page": page,
+        "domainId": DOMAIN_ID,
+        # 「プロテイン」配下を広めに拾う
+        "includeCategories": [
+            3457069051,      # プロテイン
+            10504294051,     # スポーツ栄養
+        ],
+        "priceTypes": 3,
+        "sortType": 4,
+        "filterErotic": True,
+        "isRangeEnabled": True,
+        "isFilterEnabled": True,
+    }
+
     r = requests.get(
         DEAL_URL,
         params={
             "key": KEEPA_API_KEY,
-            "domain": DOMAIN_ID,
-            "page": page,
+            "selection": json.dumps(selection, separators=(",", ":")),
         },
         timeout=60,
     )
+
     r.raise_for_status()
     return r.json()
 
@@ -80,7 +92,7 @@ def fetch_products(asins):
     r.raise_for_status()
     return r.json().get("products", [])
 
-# ---------- メイン ----------
+# ========= メイン =========
 
 def main():
     collected = set()
@@ -88,16 +100,28 @@ def main():
 
     while True:
         data = fetch_deals(page)
-        deals = data.get("deals") or []
+        deals = data.get("deals")
 
         if not deals:
             break
 
+        # deals は dict or list 両対応
+        if isinstance(deals, dict):
+            items = deals.get("dr", [])
+        else:
+            items = deals
+
         asins = []
-        for d in deals:
-            asin = d.get("asin") if isinstance(d, dict) else d
+        for d in items:
+            if isinstance(d, dict):
+                asin = d.get("asin")
+            else:
+                asin = d
             if asin:
                 asins.append(asin)
+
+        if not asins:
+            break
 
         for i in range(0, len(asins), 50):
             batch = asins[i:i+50]
