@@ -5,6 +5,9 @@ import requests
 from datetime import datetime, timezone
 from supabase import create_client
 
+# ===============================
+# 環境変数
+# ===============================
 KEEPA_API_KEY = os.environ["KEEPA_API_KEY"]
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE"]
@@ -16,8 +19,9 @@ PRODUCT_URL = "https://api.keepa.com/product"
 supa = create_client(SUPABASE_URL, SUPABASE_KEY)
 now = datetime.now(timezone.utc).isoformat()
 
-# ========= 判定ロジック =========
-
+# ===============================
+# 判定ロジック
+# ===============================
 def has_isolate_keyword(title: str) -> bool:
     t = title.lower()
     return any(k in t for k in ["isolate", "アイソレート", "ソイレート", "wpi"])
@@ -35,6 +39,7 @@ def protein_sub_category(p):
     return "other"
 
 def is_protein_target(p):
+    # Keepaの正式タイプでまず足切り
     if p.get("productType") != "PROTEIN_SUPPLEMENT_POWDER":
         return False
 
@@ -47,16 +52,20 @@ def is_protein_target(p):
         or has_isolate_keyword(title)
     )
 
-# ========= Keepa API =========
-
+# ===============================
+# Keepa API
+# ===============================
 def fetch_deals(page: int):
+    """
+    /deal は selection 必須
+    """
     selection = {
         "page": page,
         "domainId": DOMAIN_ID,
-        # 「プロテイン」配下を広めに拾う
+        # プロテイン配下を広めに拾う
         "includeCategories": [
-            3457069051,      # プロテイン
-            10504294051,     # スポーツ栄養
+            3457069051,   # プロテイン
+            10504294051,  # スポーツ栄養
         ],
         "priceTypes": 3,
         "sortType": 4,
@@ -78,34 +87,54 @@ def fetch_deals(page: int):
     return r.json()
 
 def fetch_products(asins):
-    r = requests.get(
-        PRODUCT_URL,
-        params={
-            "key": KEEPA_API_KEY,
-            "domain": DOMAIN_ID,
-            "asin": ",".join(asins),
-            "stats": 0,
-            "history": 0,
-        },
-        timeout=60,
-    )
-    r.raise_for_status()
-    return r.json().get("products", [])
+    """
+    /product の 429 対応込み（ここが今回の修正点）
+    """
+    while True:
+        r = requests.get(
+            PRODUCT_URL,
+            params={
+                "key": KEEPA_API_KEY,
+                "domain": DOMAIN_ID,
+                "asin": ",".join(asins),
+                "stats": 0,
+                "history": 0,
+            },
+            timeout=60,
+        )
 
-# ========= メイン =========
+        # ★ レート制限対応
+        if r.status_code == 429:
+            try:
+                refill_ms = r.json().get("refillIn", 60000)
+            except Exception:
+                refill_ms = 60000
 
+            wait_sec = int(refill_ms / 1000) + 5
+            print(f"[429] product API rate limited. sleep {wait_sec}s")
+            time.sleep(wait_sec)
+            continue
+
+        r.raise_for_status()
+        return r.json().get("products", [])
+
+# ===============================
+# メイン処理
+# ===============================
 def main():
     collected = set()
     page = 0
 
     while True:
+        print(f"[i] fetch deals page={page}")
         data = fetch_deals(page)
         deals = data.get("deals")
 
         if not deals:
+            print("[i] no more deals")
             break
 
-        # deals は dict or list 両対応
+        # deals は dict / list 両対応
         if isinstance(deals, dict):
             items = deals.get("dr", [])
         else:
@@ -121,7 +150,10 @@ def main():
                 asins.append(asin)
 
         if not asins:
+            print("[i] no ASINs in this page")
             break
+
+        print(f"[i] page {page} collected {len(asins)} ASINs")
 
         for i in range(0, len(asins), 50):
             batch = asins[i:i+50]
@@ -155,12 +187,13 @@ def main():
                 ).execute()
                 print(f"[OK] registered {len(rows)} protein ASINs")
 
+            # ★ 通常時も予防的に待つ
             time.sleep(30)
 
         page += 1
         time.sleep(5)
 
-    print(f"[DONE] total protein ASINs: {len(collected)}")
+    print(f"[DONE] total protein ASINs registered: {len(collected)}")
 
 if __name__ == "__main__":
     main()
