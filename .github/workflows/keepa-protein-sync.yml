@@ -1,8 +1,9 @@
-name: Keepa to Supabase sync
+name: Keepa Protein Sync
 
 on:
   workflow_dispatch:
   schedule:
+    # 6時間おき（UTC）
     - cron: "0 */6 * * *"
 
 jobs:
@@ -21,8 +22,7 @@ jobs:
         run: |
           pip install requests supabase
 
-      # ===== ASIN 収集フェーズ =====
-
+      # ===== ASIN 収集（protein）=====
       - name: Collect protein ASINs from Deal search
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
@@ -31,16 +31,7 @@ jobs:
         run: |
           python scripts/fetch_protein_from_deal_search.py
 
-      - name: Collect supplement ASINs from Deal search (BCAA)
-        env:
-          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
-        run: |
-          python scripts/fetch_supplement_from_deal_search.py
-
       # ===== ASIN エクスポート =====
-
       - name: Export ASINs (protein)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -48,29 +39,14 @@ jobs:
         run: |
           python scripts/export_asins.py protein 100
 
-      - name: Export ASINs (supplement)
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
-        run: |
-          python scripts/export_asins.py supplement 50
-
-      # ===== 詳細データ取得 =====
-
+      # ===== 詳細取得 =====
       - name: Fetch protein details
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
         run: |
           python scripts/fetch_product_details.py
 
-      - name: Fetch supplement details
-        env:
-          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
-        run: |
-          python scripts/fetch_supplement_product_details.py
-
       # ===== DB 反映 =====
-
       - name: Import to Supabase
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

@@ -1,0 +1,55 @@
+name: Keepa Supplement Sync (BCAA)
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Protein から +3時間（UTC）
+    - cron: "0 3,9,15,21 * * *"
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          pip install requests supabase
+
+      # ===== ASIN 収集（supplement/BCAA）=====
+      - name: Collect supplement ASINs from Deal search (BCAA)
+        env:
+          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+        run: |
+          python scripts/fetch_supplement_from_deal_search.py
+
+      # ===== ASIN エクスポート =====
+      - name: Export ASINs (supplement)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+        run: |
+          python scripts/export_asins.py supplement 50
+
+      # ===== 詳細取得 =====
+      - name: Fetch supplement details
+        env:
+          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+        run: |
+          python scripts/fetch_supplement_product_details.py
+
+      # ===== DB 反映 =====
+      - name: Import to Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+        run: |
+          python scripts/import_to_Supabase.py
