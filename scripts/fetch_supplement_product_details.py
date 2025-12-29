@@ -47,16 +47,21 @@ def fetch(asins):
 
         for p in data.get("products", []):
             stats = p.get("stats") or {}
+
             rows.append({
                 "asin": p.get("asin"),
+
+                # price
                 "price": safe_int(stats.get("buyBoxPrice")) or safe_int(stats.get("avg90")),
-                "sales_rank": safe_int(p.get("salesRank")),
+
+                # ranking / review / rating（★修正点）
+                "salesrank": safe_int(stats.get("salesRank")),
+                "reviewcount": safe_int(stats.get("reviewCount")),
                 "rating": stats.get("rating"),
-                "review_count": stats.get("reviewCount"),
+
                 "fetched_at": datetime.now(timezone.utc).isoformat(),
             })
 
-        # ★ 通常時30秒
         time.sleep(30)
 
     return rows

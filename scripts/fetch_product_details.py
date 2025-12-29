@@ -1,3 +1,4 @@
+
 import os
 import json
 import time
@@ -23,7 +24,6 @@ def safe_int(v):
 def extract_price(stats: dict | None):
     if not stats:
         return None
-    # Keepa は複数の価格系を返すため優先順で拾う
     return (
         stats.get("buyBoxPrice")
         or stats.get("buyBoxPriceAvg90")
@@ -32,21 +32,17 @@ def extract_price(stats: dict | None):
     )
 
 def extract_sales_rank(product: dict):
-    # ① stats.salesRank があればそれを使う
     stats = product.get("stats") or {}
     if stats.get("salesRank"):
         return stats.get("salesRank")
 
-    # ② salesRanks 配下の最新値を拾う
     sales_ranks = product.get("salesRanks") or {}
     for _, values in sales_ranks.items():
-        # [timestamp, rank, timestamp, rank, ...] の形式
         if isinstance(values, list) and len(values) >= 2:
             return values[-1]
     return None
 
 def extract_image(product: dict):
-    # imagesCSV: "img1.jpg,img2.jpg,..."
     csv = product.get("imagesCSV")
     if not csv:
         return None
@@ -54,7 +50,7 @@ def extract_image(product: dict):
     return f"https://images-na.ssl-images-amazon.com/images/I/{first}"
 
 # ===============================
-# Keepa API（429完全対応）
+# Keepa API（429対応）
 # ===============================
 def fetch_batch(asins: list[str]):
     while True:
@@ -64,7 +60,7 @@ def fetch_batch(asins: list[str]):
                 "key": KEEPA_API_KEY,
                 "domain": DOMAIN_ID,
                 "asin": ",".join(asins),
-                "stats": 1,      # stats 必須
+                "stats": 1,
                 "buybox": 1,
                 "history": 0,
             },
@@ -72,11 +68,7 @@ def fetch_batch(asins: list[str]):
         )
 
         if r.status_code == 429:
-            try:
-                refill_ms = r.json().get("refillIn", 60000)
-            except Exception:
-                refill_ms = 60000
-
+            refill_ms = r.json().get("refillIn", 60000)
             wait_sec = int(refill_ms / 1000) + 5
             print(f"[429] product API rate limited. sleep {wait_sec}s")
             time.sleep(wait_sec)
@@ -89,7 +81,6 @@ def fetch_batch(asins: list[str]):
 # main
 # ===============================
 def main():
-    # ASIN 読み込み
     with open(ASIN_FILE, "r", encoding="utf-8") as f:
         asins = json.load(f)
 
@@ -114,20 +105,23 @@ def main():
 
             rows.append({
                 "asin": p.get("asin"),
-                # 価格は「円 ×100」なので整数のまま保存
+
+                # price
                 "buyboxprice": safe_int(price_raw),
                 "buyboxfallback": safe_int(stats.get("avg90")),
+
+                # ranking / review / rating（★修正点）
                 "salesrank": safe_int(sales_rank_raw),
+                "reviewcount": safe_int(stats.get("reviewCount")),
                 "rating": stats.get("rating"),
-                "review_count": stats.get("reviewCount"),
+
+                # misc
                 "imageurl": extract_image(p),
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             })
 
-        # API を労わる
         time.sleep(30)
 
-    # JSON 出力（次の import_to_Supabase 用）
     with open(OUT_FILE, "w", encoding="utf-8") as f:
         json.dump(rows, f, ensure_ascii=False, indent=2)
 
