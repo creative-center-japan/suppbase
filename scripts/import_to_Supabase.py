@@ -7,8 +7,25 @@ SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE"]
 
 supa = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# products テーブルに存在するカラムだけ許可
+PRODUCT_COLUMNS = {
+    "asin",
+    "title",
+    "brand",
+    "buyboxprice",
+    "buyboxfallback",
+    "salesrank",
+    "droprate",
+    "droprateprev",
+    "imageurl",
+    "rating",
+    "reviewcount",
+    "score",
+    "updated_at",
+}
+
 # ===============================
-# products テーブルに upsert
+# products に upsert
 # ===============================
 def upsert_products(path: str):
     if not os.path.exists(path):
@@ -22,8 +39,14 @@ def upsert_products(path: str):
         print(f"[SKIP] {path} empty")
         return
 
-    # asin が無い行は除外
-    normalized = [r for r in rows if r.get("asin")]
+    normalized = []
+    for r in rows:
+        if not r.get("asin"):
+            continue
+
+        # ★ products に存在するキーだけ残す
+        filtered = {k: v for k, v in r.items() if k in PRODUCT_COLUMNS}
+        normalized.append(filtered)
 
     if not normalized:
         print(f"[SKIP] {path} no valid product rows")
@@ -35,7 +58,6 @@ def upsert_products(path: str):
     ).execute()
 
     print(f"[OK] upserted {len(normalized)} rows into products")
-
 
 # ===============================
 # products_price_history に insert
@@ -54,7 +76,6 @@ def insert_price_history(path: str):
 
     normalized = []
     for r in rows:
-        # price / buyboxprice のどちらかがあれば履歴に入れる
         price = r.get("price") or r.get("buyboxprice")
         if r.get("asin") and price:
             normalized.append({
@@ -69,7 +90,6 @@ def insert_price_history(path: str):
     supa.table("products_price_history").insert(normalized).execute()
     print(f"[OK] inserted {len(normalized)} rows into products_price_history")
 
-
 # ===============================
 # main
 # ===============================
@@ -81,7 +101,6 @@ def main():
     # supplement
     upsert_products("supplement_product_details.json")
     insert_price_history("supplement_product_details.json")
-
 
 if __name__ == "__main__":
     main()
