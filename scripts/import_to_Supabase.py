@@ -7,7 +7,7 @@ SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE"]
 
 supa = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# products テーブルに存在するカラムだけ許可
+# products テーブルに存在するカラム
 PRODUCT_COLUMNS = {
     "asin",
     "title",
@@ -40,16 +40,19 @@ def upsert_products(path: str):
         return
 
     normalized = []
+    skipped = 0
+
     for r in rows:
-        if not r.get("asin"):
+        # ★ title が無い行は products に入れない
+        if not r.get("asin") or not r.get("title"):
+            skipped += 1
             continue
 
-        # ★ products に存在するキーだけ残す
         filtered = {k: v for k, v in r.items() if k in PRODUCT_COLUMNS}
         normalized.append(filtered)
 
     if not normalized:
-        print(f"[SKIP] {path} no valid product rows")
+        print(f"[SKIP] {path} no valid product rows (all missing title)")
         return
 
     supa.table("products").upsert(
@@ -57,7 +60,7 @@ def upsert_products(path: str):
         on_conflict="asin"
     ).execute()
 
-    print(f"[OK] upserted {len(normalized)} rows into products")
+    print(f"[OK] upserted {len(normalized)} rows into products (skipped {skipped})")
 
 # ===============================
 # products_price_history に insert
