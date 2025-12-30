@@ -3,152 +3,104 @@ import json
 import time
 import requests
 from datetime import datetime, timezone
-from supabase import create_client
 
 # ===============================
-# 環境変数
+# 設定
 # ===============================
-KEEPA_API_KEY = os.environ["KEEPA_API_KEY"]
-SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE"]
+API_KEY = os.environ["KEEPA_API_KEY"]
+DOMAIN_ID = 5  # Amazon.co.jp
+OUT_ASIN_FILE = "asins_protein.json"
 
-DOMAIN_ID = 5  # JP
-DEAL_URL = "https://api.keepa.com/deal"
-
-supa = create_client(SUPABASE_URL, SUPABASE_KEY)
-now = datetime.now(timezone.utc).isoformat()
-
-# ===============================
-# Web検索と同等の selection
-# （あなたが貼ってくれた JSON を整理したもの）
-# ===============================
-BASE_SELECTION = {
-    "domainId": DOMAIN_ID,
-    "excludeCategories": [],
-    "includeCategories": [
-        3457069051,   # プロテイン
-        3457070051,
-        3457071051,
-        3457072051,
-        3457073051,
-        3457074051,
-        3457075051,
-        3457076051,
-        3457077051,
-        3457079051,
-    ],
-    "priceTypes": [0],          # Amazon 新品
-    "deltaRange": [0, 9500],
-    "deltaPercentRange": [0, 2147483647],
-    "salesRankRange": [-1, -1],
-    "currentRange": [0, 49200],
-    "minRating": -1,
-    "isLowest": False,
-    "isLowest90": False,
-    "isLowestOffer": False,
-    "isOutOfStock": False,
-    "singleVariation": True,
-    "hasReviews": False,
-    "isPrimeExclusive": False,
-    "mustHaveAmazonOffer": False,
-    "mustNotHaveAmazonOffer": False,
-    "sortType": 4,              # 人気順
-    "dateRange": "2",           # 直近
-    "warehouseConditions": [1,2,3,4,5],
-    "isRangeEnabled": True,
-    "isFilterEnabled": True,
-    "filterErotic": True,
-}
-
-# Web検索で使っているキーワード
-TITLE_KEYWORDS = [
+# 検索キーワード（母集団）
+SEARCH_TERMS = [
     "プロテイン",
-    "ホエイ",
-    "ソイ",
-    "isolate",
-    "wpi",
+    "ホエイ プロテイン",
+    "WPI プロテイン",
+    "ソイ プロテイン",
 ]
 
-MAX_PAGES = 3        # まずは 1 ページだけ
-SLEEP_PER_CALL = 30  # Keepa対策
+MAX_PAGES = 5          # 1 term あたり最大 5 ページ（= 最大 50 ASIN）
+SLEEP_SEC = 5          # Search API 間の待機
+RATE_LIMIT_SLEEP = 60  # 429 時
+
+SEARCH_API = "https://api.keepa.com/search"
+
 
 # ===============================
-# API 呼び出し
+# Search 実行
 # ===============================
-def call_deal_api(selection):
-    while True:
-        r = requests.get(
-            DEAL_URL,
-            params={
-                "key": KEEPA_API_KEY,
-                "selection": json.dumps(selection, separators=(",", ":")),
-            },
-            timeout=60,
-        )
+def search_asins(term: str):
+    collected = []
 
-        if r.status_code == 429:
-            print("[429] deal API rate limited. sleep 60s")
-            time.sleep(60)
-            continue
+    for page in range(MAX_PAGES):
+        print(f"[i] search term='{term}' page={page}")
 
-        r.raise_for_status()
-        return r.json()
+        while True:
+            r = requests.get(
+                SEARCH_API,
+                params={
+                    "key": API_KEY,
+                    "domain": DOMAIN_ID,
+                    "type": "product",
+                    "term": term,
+                    "page": page,
+                    "stats": 180,
+                    "rating": 1,     # ★ 重要：review / rating を返させる
+                    "history": 0,
+                    "asins-only": 1  # ★ ASIN だけ取得（軽量）
+                },
+                timeout=60,
+            )
+
+            if r.status_code == 429:
+                print("[429] rate limited, sleep 60s")
+                time.sleep(RATE_LIMIT_SLEEP)
+                continue
+
+            r.raise_for_status()
+            break
+
+        data = r.json()
+        asin_list = data.get("asinList", [])
+
+        print(f"    -> got {len(asin_list)} ASINs")
+
+        if not asin_list:
+            break
+
+        collected.extend(asin_list)
+
+        # Search API は軽めに間隔を空ける
+        time.sleep(SLEEP_SEC)
+
+        if len(asin_list) < 10:
+            break
+
+    return collected
+
 
 # ===============================
 # main
 # ===============================
 def main():
-    total_registered = 0
-    seen_asins = set()
+    all_asins = set()
 
-    for keyword in TITLE_KEYWORDS:
-        print(f"[i] deal search keyword='{keyword}'")
+    for term in SEARCH_TERMS:
+        asins = search_asins(term)
+        all_asins.update(asins)
 
-        for page in range(MAX_PAGES):
-            selection = dict(BASE_SELECTION)
-            selection["page"] = page
-            selection["titleSearch"] = keyword
+    if not all_asins:
+        print("[SKIP] no ASINs collected")
+        return
 
-            data = call_deal_api(selection)
-            deals = data.get("deals")
+    asin_list = sorted(all_asins)
 
-            if not deals:
-                print("[i] no deals")
-                break
+    with open(OUT_ASIN_FILE, "w", encoding="utf-8") as f:
+        json.dump(asin_list, f, ensure_ascii=False, indent=2)
 
-            items = deals.get("dr", []) if isinstance(deals, dict) else deals
-            if not items:
-                break
+    print(f"[DONE] collected {len(asin_list)} unique protein ASINs")
+    print(f"       output -> {OUT_ASIN_FILE}")
 
-            rows = []
-            for d in items:
-                asin = d.get("asin") if isinstance(d, dict) else d
-                if not asin or asin in seen_asins:
-                    continue
-
-                rows.append({
-                    "asin": asin,
-                    "category": "protein",
-                    "sub_category": "unknown",
-                    "source": f"deal_search:{keyword}",
-                    "first_seen_at": now,
-                    "last_seen_at": now,
-                    "is_active": True,
-                })
-                seen_asins.add(asin)
-
-            if rows:
-                supa.table("tracked_asins").upsert(
-                    rows,
-                    on_conflict="asin",
-                    returning="minimal"
-                ).execute()
-                total_registered += len(rows)
-                print(f"[OK] registered {len(rows)} ASINs")
-
-            time.sleep(SLEEP_PER_CALL)
-
-    print(f"[DONE] total registered protein ASINs = {total_registered}")
 
 if __name__ == "__main__":
     main()
