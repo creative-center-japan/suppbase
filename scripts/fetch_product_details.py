@@ -2,76 +2,120 @@ import os
 import json
 import time
 import requests
+from datetime import datetime, timezone
 
-KEEPA_API_KEY = os.environ["KEEPA_API_KEY"]
+API_KEY = os.environ["KEEPA_API_KEY"]
 DOMAIN_ID = 5  # Amazon.co.jp
+
 ASIN_FILE = "asins_protein.json"
 OUT_FILE = "product_details.json"
-
 KEEPA_PRODUCT_API = "https://api.keepa.com/product"
 
-def chunk(lst, size):
-    for i in range(0, len(lst), size):
-        yield lst[i:i + size]
 
-def fetch_products(asins):
-    params = {
-        "key": KEEPA_API_KEY,
-        "domain": DOMAIN_ID,
-        "asin": ",".join(asins),
-        "stats": 180,   # stats を必ず有効化
-        "history": 0
-    }
-    r = requests.get(KEEPA_PRODUCT_API, params=params, timeout=60)
-    if r.status_code == 429:
-        print("[429] rate limited, sleep 60s")
-        time.sleep(60)
-        return None
-    r.raise_for_status()
-    return r.json()
+def safe_int(v):
+    return v if isinstance(v, int) and v > 0 else None
 
-def extract_product(p):
+
+def extract_salesrank(stats):
     """
-    Keepa product 1件 → DB用 dict
+    stats.salesRank は dict（カテゴリ別）なので最小値を採用
     """
-    asin = p.get("asin")
-    title = p.get("title")
-
-    # title が無い商品は products 更新できないので捨てる
-    if not asin or not title:
-        return None
-
-    # ---- レビュー ----
-    reviewcount = p.get("reviewCount")
-    rating = p.get("rating")
-
-    # ---- 売れ筋ランク ----
-    salesrank = None
-    stats = p.get("stats") or {}
     sr = stats.get("salesRank")
     if isinstance(sr, dict):
-        # categoryId は無視して最小値を使う
         try:
-            salesrank = min(v for v in sr.values() if v is not None)
+            return min(v for v in sr.values() if isinstance(v, int))
         except ValueError:
-            salesrank = None
+            return None
+    return None
 
-    # ---- 価格 ----
-    price = None
-    stats_current = stats.get("current") or {}
-    buybox = stats_current.get("buyBoxPrice")
-    if isinstance(buybox, list) and len(buybox) > 0:
-        # Keepa は「円 × 100」
-        price = buybox[0]
 
-    return {
-        "asin": asin,
-        "title": title,
-        "salesrank": salesrank,
-        "reviewcount": reviewcount,
-        "rating": rating,
-        "price": price
-    }
+def extract_price(stats):
+    """
+    Keepa の stats.current は dict / list 両方来るので両対応
+    """
+    current = stats.get("current")
+
+    # パターン1: dict
+    if isinstance(current, dict):
+        bb = current.get("buyBoxPrice")
+        if isinstance(bb, list) and len(bb) > 0:
+            return bb[0]
+
+    # パターン2: list（Keepa の raw 配列）
+    if isinstance(current, list):
+        try:
+            price = current[2]  # buyBoxPrice が入ることが多い
+            if isinstance(price, int) and price > 0:
+                return price
+        except (IndexError, TypeError):
+            pass
+
+    return None
+
+
+def fetch(asins):
+    rows = []
+
+    for i in range(0, len(asins), 10):
+        batch = asins[i:i + 10]
+        print(f"[i] fetch protein batch {i//10 + 1}")
+
+        while True:
+            r = requests.get(
+                KEEPA_PRODUCT_API,
+                params={
+                    "key": API_KEY,
+                    "domain": DOMAIN_ID,
+                    "asin": ",".join(batch),
+                    "stats": 180,
+                    "history": 0,
+                },
+                timeout=60,
+            )
+
+            if r.status_code == 429:
+                refill_ms = r.json().get("refillIn", 60000)
+                wait_sec = int(refill_ms / 1000) + 5
+                print(f"[429] rate limited, sleep {wait_sec}s")
+                time.sleep(wait_sec)
+                continue
+
+            r.raise_for_status()
+            break
+
+        data = r.json()
+
+        for p in data.get("products", []):
+            stats = p.get("stats") or {}
+
+            asin = p.get("asin")
+            title = p.get("title")
+
+            # title が無いと products を更新できない
+            if not asin or not title:
+                continue
+
+            row = {
+                "asin": asin,
+                "title": title,
+
+                # ★ products 用
+                "salesrank": extract_salesrank(stats),
+                "reviewcount": safe_int(p.get("reviewCount")),
+                "rating": p.get("rating"),
+
+                # ★ price_history 用
+                "price": extract_price(stats),
+
+                "fetched_at": datetime.now(timezone.utc).isoformat(),
+            }
+
+            rows.append(row)
+
+        time.sleep(30)  # API負荷軽減
+
+    return rows
+
 
 def main():
     if not os.path.exists(ASIN_FILE):
@@ -82,33 +126,20 @@ def main():
         asins = json.load(f)
 
     if not asins:
-        print("[SKIP] no ASINs")
+        print("[SKIP] no protein ASINs")
         return
 
-    results = []
+    rows = fetch(asins)
 
-    for batch_no, asin_batch in enumerate(chunk(asins, 10), start=1):
-        print(f"[i] fetch protein batch {batch_no}")
-        data = fetch_products(asin_batch)
-        if not data:
-            continue
-
-        products = data.get("products") or []
-        for p in products:
-            row = extract_product(p)
-            if row:
-                results.append(row)
-
-        time.sleep(1)  # 軽い間隔（429対策）
-
-    if not results:
-        print("[SKIP] no valid product rows")
+    if not rows:
+        print("[SKIP] no valid protein product rows")
         return
 
     with open(OUT_FILE, "w", encoding="utf-8") as f:
-        json.dump(results, f, ensure_ascii=False)
+        json.dump(rows, f, ensure_ascii=False, indent=2)
 
-    print(f"[OK] protein fetched {len(results)} rows")
+    print(f"[OK] protein fetched {len(rows)} rows")
+
 
 if __name__ == "__main__":
     main()
