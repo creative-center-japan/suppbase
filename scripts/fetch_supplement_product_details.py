@@ -13,11 +13,27 @@ OUT_FILE = "supplement_product_details.json"
 def safe_int(v):
     return v if isinstance(v, int) and v > 0 else None
 
+def extract_salesrank(stats):
+    sr = stats.get("salesRank")
+    if isinstance(sr, dict):
+        try:
+            return min(v for v in sr.values() if isinstance(v, int))
+        except ValueError:
+            return None
+    return None
+
+def extract_price(stats):
+    current = stats.get("current") or {}
+    bb = current.get("buyBoxPrice")
+    if isinstance(bb, list) and len(bb) > 0:
+        return bb[0]
+    return None
+
 def fetch(asins):
     rows = []
 
-    for i in range(0, len(asins), 50):
-        batch = asins[i:i+50]
+    for i in range(0, len(asins), 10):
+        batch = asins[i:i+10]
 
         while True:
             r = requests.get(
@@ -26,8 +42,7 @@ def fetch(asins):
                     "key": API_KEY,
                     "domain": DOMAIN_ID,
                     "asin": ",".join(batch),
-                    "stats": 1,
-                    "buybox": 1,
+                    "stats": 180,
                     "history": 0,
                 },
                 timeout=60,
@@ -48,19 +63,22 @@ def fetch(asins):
         for p in data.get("products", []):
             stats = p.get("stats") or {}
 
-            rows.append({
+            row = {
                 "asin": p.get("asin"),
+                "title": p.get("title"),
 
-                # price
-                "price": safe_int(stats.get("buyBoxPrice")) or safe_int(stats.get("avg90")),
-
-                # ranking / review / rating（★修正点）
-                "salesrank": safe_int(stats.get("salesRank")),
-                "reviewcount": safe_int(stats.get("reviewCount")),
-                "rating": stats.get("rating"),
+                # ★ 正しい取得
+                "price": extract_price(stats),
+                "salesrank": extract_salesrank(stats),
+                "reviewcount": safe_int(p.get("reviewCount")),
+                "rating": p.get("rating"),
 
                 "fetched_at": datetime.now(timezone.utc).isoformat(),
-            })
+            }
+
+            # title が無い商品は products 更新不可なので除外
+            if row["asin"] and row["title"]:
+                rows.append(row)
 
         time.sleep(30)
 
