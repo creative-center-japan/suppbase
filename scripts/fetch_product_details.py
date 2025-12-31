@@ -1,3 +1,4 @@
+# scripts/fetch_product_details.py
 import os
 import json
 import time
@@ -13,41 +14,30 @@ KEEPA_PRODUCT_API = "https://api.keepa.com/product"
 
 
 def safe_int(v):
-    return v if isinstance(v, int) and v > 0 else None
+    return v if isinstance(v, int) and v >= 0 else None
 
 
 def extract_salesrank(stats):
-    """
-    stats.salesRank は dict（カテゴリ別）なので最小値を採用
-    """
     sr = stats.get("salesRank")
     if isinstance(sr, dict):
-        try:
-            return min(v for v in sr.values() if isinstance(v, int))
-        except ValueError:
-            return None
+        vals = [v for v in sr.values() if isinstance(v, int)]
+        return min(vals) if vals else None
     return None
 
 
 def extract_price(stats):
-    """
-    Keepa の stats.current は dict / list 両方来るので両対応
-    """
     current = stats.get("current")
 
-    # パターン1: dict
     if isinstance(current, dict):
         bb = current.get("buyBoxPrice")
-        if isinstance(bb, list) and len(bb) > 0:
+        if isinstance(bb, list) and bb and isinstance(bb[0], int):
             return bb[0]
 
-    # パターン2: list（Keepa の raw 配列）
     if isinstance(current, list):
         try:
-            price = current[2]  # buyBoxPrice が入ることが多い
-            if isinstance(price, int) and price > 0:
-                return price
-        except (IndexError, TypeError):
+            price = current[2]  # buyBoxPrice
+            return price if isinstance(price, int) and price > 0 else None
+        except Exception:
             pass
 
     return None
@@ -68,16 +58,17 @@ def fetch(asins):
                     "domain": DOMAIN_ID,
                     "asin": ",".join(batch),
                     "stats": 180,
+                    "rating": 1,     # ★ これが無いと review / rating は来ない
                     "history": 0,
                 },
                 timeout=60,
             )
 
             if r.status_code == 429:
-                refill_ms = r.json().get("refillIn", 60000)
-                wait_sec = int(refill_ms / 1000) + 5
-                print(f"[429] rate limited, sleep {wait_sec}s")
-                time.sleep(wait_sec)
+                refill = r.json().get("refillIn", 60000)
+                wait = int(refill / 1000) + 5
+                print(f"[429] rate limited, sleep {wait}s")
+                time.sleep(wait)
                 continue
 
             r.raise_for_status()
@@ -86,33 +77,24 @@ def fetch(asins):
         data = r.json()
 
         for p in data.get("products", []):
-            stats = p.get("stats") or {}
-
             asin = p.get("asin")
             title = p.get("title")
-
-            # title が無いと products を更新できない
             if not asin or not title:
                 continue
 
-            row = {
+            stats = p.get("stats") or {}
+
+            rows.append({
                 "asin": asin,
                 "title": title,
-
-                # ★ products 用
                 "salesrank": extract_salesrank(stats),
                 "reviewcount": safe_int(p.get("reviewCount")),
                 "rating": p.get("rating"),
-
-                # ★ price_history 用
                 "price": extract_price(stats),
-
                 "fetched_at": datetime.now(timezone.utc).isoformat(),
-            }
+            })
 
-            rows.append(row)
-
-        time.sleep(30)  # API負荷軽減
+        time.sleep(30)
 
     return rows
 
@@ -132,7 +114,7 @@ def main():
     rows = fetch(asins)
 
     if not rows:
-        print("[SKIP] no valid protein product rows")
+        print("[SKIP] no valid product rows")
         return
 
     with open(OUT_FILE, "w", encoding="utf-8") as f:
