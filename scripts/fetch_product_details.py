@@ -1,127 +1,60 @@
 # scripts/fetch_product_details.py
-import os
+
 import json
+import os
 import time
 import requests
-from datetime import datetime, timezone
 
-API_KEY = os.environ["KEEPA_API_KEY"]
+KEEPA_API_KEY = os.environ["KEEPA_API_KEY"]
 DOMAIN_ID = 5  # Amazon.co.jp
+BATCH_SIZE = 20
+SLEEP_SEC = 60
 
 ASIN_FILE = "asins_protein.json"
 OUT_FILE = "product_details.json"
-KEEPA_PRODUCT_API = "https://api.keepa.com/product"
 
+API_URL = "https://api.keepa.com/product"
 
-def safe_int(v):
-    return v if isinstance(v, int) and v >= 0 else None
-
-
-def extract_salesrank(stats):
-    sr = stats.get("salesRank")
-    if isinstance(sr, dict):
-        vals = [v for v in sr.values() if isinstance(v, int)]
-        return min(vals) if vals else None
-    return None
-
-
-def extract_price(stats):
-    current = stats.get("current")
-
-    if isinstance(current, dict):
-        bb = current.get("buyBoxPrice")
-        if isinstance(bb, list) and bb and isinstance(bb[0], int):
-            return bb[0]
-
-    if isinstance(current, list):
-        try:
-            price = current[2]  # buyBoxPrice
-            return price if isinstance(price, int) and price > 0 else None
-        except Exception:
-            pass
-
-    return None
-
-
-def fetch(asins):
-    rows = []
-
-    for i in range(0, len(asins), 10):
-        batch = asins[i:i + 10]
-        print(f"[i] fetch protein batch {i//10 + 1}")
-
-        while True:
-            r = requests.get(
-                KEEPA_PRODUCT_API,
-                params={
-                    "key": API_KEY,
-                    "domain": DOMAIN_ID,
-                    "asin": ",".join(batch),
-                    "stats": 180,
-                    "rating": 1,     # ★ これが無いと review / rating は来ない
-                    "history": 0,
-                },
-                timeout=60,
-            )
-
-            if r.status_code == 429:
-                refill = r.json().get("refillIn", 60000)
-                wait = int(refill / 1000) + 5
-                print(f"[429] rate limited, sleep {wait}s")
-                time.sleep(wait)
-                continue
-
-            r.raise_for_status()
-            break
-
-        data = r.json()
-
-        for p in data.get("products", []):
-            asin = p.get("asin")
-            title = p.get("title")
-            if not asin or not title:
-                continue
-
-            stats = p.get("stats") or {}
-
-            rows.append({
-                "asin": asin,
-                "title": title,
-                "salesrank": extract_salesrank(stats),
-                "reviewcount": safe_int(p.get("reviewCount")),
-                "rating": p.get("rating"),
-                "price": extract_price(stats),
-                "fetched_at": datetime.now(timezone.utc).isoformat(),
-            })
-
-        time.sleep(30)
-
-    return rows
-
+def fetch_batch(asins):
+    params = {
+        "key": KEEPA_API_KEY,
+        "domain": DOMAIN_ID,
+        "asin": ",".join(asins),
+        "stats": 180,
+        "rating": 1,
+        "buybox": 1,
+        "update": 0,
+    }
+    r = requests.get(API_URL, params=params, timeout=60)
+    r.raise_for_status()
+    return r.json().get("products", [])
 
 def main():
     if not os.path.exists(ASIN_FILE):
-        print(f"[ERROR] {ASIN_FILE} not found")
+        print("[SKIP] asins_protein.json not found")
         return
 
     with open(ASIN_FILE, "r", encoding="utf-8") as f:
         asins = json.load(f)
 
-    if not asins:
-        print("[SKIP] no protein ASINs")
-        return
-
-    rows = fetch(asins)
-
-    if not rows:
-        print("[SKIP] no valid product rows")
-        return
+    all_products = []
+    for i in range(0, len(asins), BATCH_SIZE):
+        batch = asins[i:i+BATCH_SIZE]
+        print(f"[i] fetch protein batch {i//BATCH_SIZE + 1}")
+        try:
+            products = fetch_batch(batch)
+            all_products.extend(products)
+        except Exception as e:
+            print("[ERROR]", e)
+            print("[WAIT] sleep", SLEEP_SEC)
+            time.sleep(SLEEP_SEC)
+            continue
+        time.sleep(SLEEP_SEC)
 
     with open(OUT_FILE, "w", encoding="utf-8") as f:
-        json.dump(rows, f, ensure_ascii=False, indent=2)
+        json.dump(all_products, f, ensure_ascii=False)
 
-    print(f"[OK] protein fetched {len(rows)} rows")
-
+    print(f"[OK] protein fetched {len(all_products)} rows")
 
 if __name__ == "__main__":
     main()
