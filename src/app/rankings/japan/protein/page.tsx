@@ -25,15 +25,27 @@ type ProductItem = {
   affiliateUrl: string;
 };
 
-// ★ loading を optional に変更
-const RankingSection = (
-  { items, loading }: { items: ProductItem[]; loading?: boolean }
-) => {
+const RankingSection = ({
+  items,
+  loading,
+}: {
+  items: ProductItem[];
+  loading?: boolean;
+}) => {
   if (loading) {
-    return <p className="text-center text-gray-400">ランキング読み込み中...</p>;
+    return (
+      <p className="text-center text-gray-400 py-8">
+        ランキング読み込み中…
+      </p>
+    );
   }
+
   if (!items.length) {
-    return <p className="text-center text-gray-400">データがありません</p>;
+    return (
+      <p className="text-center text-gray-400 py-8">
+        データがありません
+      </p>
+    );
   }
 
   return (
@@ -52,16 +64,19 @@ const RankingSection = (
           }`}
         >
           <Image
-            src={item.imageUrl || '/no-image.png'}
+            src={
+              item.imageUrl && item.imageUrl.startsWith('http')
+                ? item.imageUrl
+                : '/no-image.png'
+            }
             alt={item.title}
             width={96}
             height={96}
             className="object-contain rounded"
-            unoptimized={Boolean(item.imageUrl?.includes('amazon'))}
+            unoptimized
           />
 
           <div className="flex-1">
-            {/* タイトル・ブランド */}
             <h3
               className={`text-lg font-semibold ${
                 item.rank === 1
@@ -75,12 +90,17 @@ const RankingSection = (
             >
               #{item.rank} {item.title}
             </h3>
+
             <p className="text-sm text-gray-600">{item.brand}</p>
 
-            {/* 数値 + Amazonボタン */}
             <div className="mt-4 flex items-end justify-between gap-4">
               <div className="text-sm text-gray-700 space-y-1">
-                <p>価格: {item.price != null ? `${item.price.toLocaleString()}円` : '―'}</p>
+                <p>
+                  価格:{' '}
+                  {item.price != null
+                    ? `${item.price.toLocaleString()}円`
+                    : '―'}
+                </p>
                 <p>
                   ドロップ回数: {item.dropRate ?? '―'}
                   {typeof item.dropRateDiff === 'number' &&
@@ -90,7 +110,10 @@ const RankingSection = (
                       ? ` ↓${Math.abs(item.dropRateDiff)}`
                       : '')}
                 </p>
-                <p>スコア: {item.score != null && item.score > 0 ? item.score : '―'}</p>
+                <p>
+                  スコア:{' '}
+                  {item.score != null && item.score > 0 ? item.score : '―'}
+                </p>
               </div>
 
               <a
@@ -113,11 +136,13 @@ const RankingSection = (
 };
 
 export default function ProteinRankingPage() {
-  const [activeTab, setActiveTab] = useState<'whey' | 'soy' | 'isolate'>('whey');
+  const [activeTab, setActiveTab] =
+    useState<'whey' | 'soy' | 'isolate'>('whey');
   const [wheyItems, setWheyItems] = useState<ProductItem[]>([]);
   const [soyItems, setSoyItems] = useState<ProductItem[]>([]);
   const [isolateItems, setIsolateItems] = useState<ProductItem[]>([]);
-  const [titleMonth, setTitleMonth] = useState<string>('');
+  const [loading, setLoading] = useState(true);
+  const [titleMonth, setTitleMonth] = useState('');
 
   useEffect(() => {
     const fmt = new Intl.DateTimeFormat('ja-JP', {
@@ -129,15 +154,30 @@ export default function ProteinRankingPage() {
   }, []);
 
   useEffect(() => {
-    fetch('/api/ranking?type=whey&sort=score', { cache: 'no-store' })
-      .then(res => res.json())
-      .then(data => setWheyItems(data || []));
-    fetch('/api/ranking?type=soy&sort=score', { cache: 'no-store' })
-      .then(res => res.json())
-      .then(data => setSoyItems(data || []));
-    fetch('/api/ranking?type=isolate&sort=score', { cache: 'no-store' })
-      .then(res => res.json())
-      .then(data => setIsolateItems(data || []));
+    setLoading(true);
+
+    Promise.all([
+      fetch('/api/ranking?type=whey&sort=score', { cache: 'no-store' }).then(r =>
+        r.json()
+      ),
+      fetch('/api/ranking?type=soy&sort=score', { cache: 'no-store' }).then(r =>
+        r.json()
+      ),
+      fetch('/api/ranking?type=isolate&sort=score', {
+        cache: 'no-store',
+      }).then(r => r.json()),
+    ])
+      .then(([whey, soy, isolate]) => {
+        setWheyItems(Array.isArray(whey) ? whey : []);
+        setSoyItems(Array.isArray(soy) ? soy : []);
+        setIsolateItems(Array.isArray(isolate) ? isolate : []);
+      })
+      .catch(() => {
+        setWheyItems([]);
+        setSoyItems([]);
+        setIsolateItems([]);
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   const items =
@@ -150,8 +190,11 @@ export default function ProteinRankingPage() {
   return (
     <main className="max-w-4xl mx-auto px-4 py-8">
       <h1 className="text-3xl font-bold mb-1 text-center">
-        {titleMonth ? `${titleMonth} プロテイン ランキング` : 'プロテイン ランキング'}
+        {titleMonth
+          ? `${titleMonth} プロテイン ランキング`
+          : 'プロテイン ランキング'}
       </h1>
+
       <p className="text-sm text-gray-500 text-center mb-6">
         <Link href="/about#score" className="underline hover:text-green-700">
           SuppBaseスコアとは？
@@ -162,7 +205,9 @@ export default function ProteinRankingPage() {
         {tabs.map(tab => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id as 'whey' | 'soy' | 'isolate')}
+            onClick={() =>
+              setActiveTab(tab.id as 'whey' | 'soy' | 'isolate')
+            }
             className={`px-4 py-2 rounded-full border font-medium transition ${
               activeTab === tab.id
                 ? 'bg-green-600 text-white border-green-600'
@@ -174,8 +219,7 @@ export default function ProteinRankingPage() {
         ))}
       </div>
 
-      {/* loading は渡さなくてOK */}
-      <RankingSection items={items} />
+      <RankingSection items={items} loading={loading} />
     </main>
   );
 }

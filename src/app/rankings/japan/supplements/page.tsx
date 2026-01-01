@@ -19,9 +19,27 @@ type ProductItem = {
   affiliateUrl: string;
 };
 
-const RankingSection = ({ items }: { items: ProductItem[] }) => {
+const RankingSection = ({
+  items,
+  loading,
+}: {
+  items: ProductItem[];
+  loading?: boolean;
+}) => {
+  if (loading) {
+    return (
+      <p className="text-center text-gray-400 py-8">
+        ランキング読み込み中…
+      </p>
+    );
+  }
+
   if (!items.length) {
-    return <p className="text-center text-gray-400">データがありません</p>;
+    return (
+      <p className="text-center text-gray-400 py-8">
+        データがありません
+      </p>
+    );
   }
 
   return (
@@ -40,12 +58,16 @@ const RankingSection = ({ items }: { items: ProductItem[] }) => {
           }`}
         >
           <Image
-            src={item.imageUrl || '/no-image.png'}
+            src={
+              item.imageUrl && item.imageUrl.startsWith('http')
+                ? item.imageUrl
+                : '/no-image.png'
+            }
             alt={item.title}
             width={96}
             height={96}
             className="object-contain rounded"
-            unoptimized={Boolean(item.imageUrl?.includes('amazon'))}
+            unoptimized
           />
 
           <div className="flex-1">
@@ -62,11 +84,17 @@ const RankingSection = ({ items }: { items: ProductItem[] }) => {
             >
               #{index + 1} {item.title}
             </h3>
+
             <p className="text-sm text-gray-600">{item.brand}</p>
 
             <div className="mt-4 flex items-end justify-between gap-4">
               <div className="text-sm text-gray-700 space-y-1">
-                <p>価格: {item.price != null ? `${item.price.toLocaleString()}円` : '―'}</p>
+                <p>
+                  価格:{' '}
+                  {item.price != null
+                    ? `${item.price.toLocaleString()}円`
+                    : '―'}
+                </p>
                 <p>
                   ドロップ回数: {item.dropRate ?? '―'}
                   {typeof item.dropRateDiff === 'number' &&
@@ -76,7 +104,10 @@ const RankingSection = ({ items }: { items: ProductItem[] }) => {
                       ? ` ↓${Math.abs(item.dropRateDiff)}`
                       : '')}
                 </p>
-                <p>スコア: {item.score != null && item.score > 0 ? item.score : '―'}</p>
+                <p>
+                  スコア:{' '}
+                  {item.score != null && item.score > 0 ? item.score : '―'}
+                </p>
               </div>
 
               <a
@@ -100,7 +131,8 @@ const RankingSection = ({ items }: { items: ProductItem[] }) => {
 
 export default function SupplementRankingPage() {
   const [items, setItems] = useState<ProductItem[]>([]);
-  const [titleMonth, setTitleMonth] = useState<string>('');
+  const [loading, setLoading] = useState(true);
+  const [titleMonth, setTitleMonth] = useState('');
 
   useEffect(() => {
     const fmt = new Intl.DateTimeFormat('ja-JP', {
@@ -112,23 +144,29 @@ export default function SupplementRankingPage() {
   }, []);
 
   useEffect(() => {
+    setLoading(true);
     fetch('/api/supplements', { cache: 'no-store' })
       .then(res => res.json())
-      .then(data => setItems(Array.isArray(data) ? data : []));
+      .then(data => setItems(Array.isArray(data) ? data : []))
+      .catch(() => setItems([]))
+      .finally(() => setLoading(false));
   }, []);
 
   return (
     <main className="max-w-4xl mx-auto px-4 py-8">
       <h1 className="text-3xl font-bold mb-1 text-center">
-        {titleMonth ? `${titleMonth} サプリメント ランキング` : 'サプリメント ランキング'}
+        {titleMonth
+          ? `${titleMonth} サプリメント ランキング`
+          : 'サプリメント ランキング'}
       </h1>
+
       <p className="text-sm text-gray-500 text-center mb-6">
         <Link href="/about#score" className="underline hover:text-green-700">
           SuppBaseスコアとは？
         </Link>
       </p>
 
-      <RankingSection items={items} />
+      <RankingSection items={items} loading={loading} />
     </main>
   );
 }
