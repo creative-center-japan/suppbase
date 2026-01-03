@@ -1,5 +1,3 @@
-# scripts/fetch_product_details.py
-
 import json
 import os
 import time
@@ -10,30 +8,40 @@ DOMAIN_ID = 5  # Amazon.co.jp
 ASIN_FILE = "asins_protein.json"
 OUT_FILE = "product_details.json"
 
-# ★ 安定優先：10以下
 BATCH_SIZE = 10
-
 API_URL = "https://api.keepa.com/product"
 
-def fetch_batch(asins):
-    while True:
-        params = {
-            "key": KEEPA_API_KEY,
-            "domain": DOMAIN_ID,
-            "asin": ",".join(asins),
-            "stats": 180,
-            "rating": 1,
-            "buybox": 1,
-            "update": 48,
-            "history": 0
-        }
+MAX_429_RETRY = 5        # ★ 無限ループ防止
+SLEEP_ON_429 = 60
 
-        r = requests.get(API_URL, params=params, timeout=60)
+def fetch_batch(asins):
+    retry_429 = 0
+
+    while True:
+        r = requests.get(
+            API_URL,
+            params={
+                "key": KEEPA_API_KEY,
+                "domain": DOMAIN_ID,
+                "asin": ",".join(asins),
+                "stats": 180,
+                "rating": 1,
+                "buybox": 1,
+                "update": 48,
+                "history": 0
+            },
+            timeout=60
+        )
 
         if r.status_code == 429:
-            # ★ 即終了しない。待って再試行
-            print("[429] rate limited. sleep 60s and retry")
-            time.sleep(60)
+            retry_429 += 1
+            print(f"[429] rate limited ({retry_429}/{MAX_429_RETRY})")
+
+            if retry_429 >= MAX_429_RETRY:
+                print("[STOP] too many 429s. skip this batch")
+                return None
+
+            time.sleep(SLEEP_ON_429)
             continue
 
         r.raise_for_status()
@@ -53,36 +61,32 @@ def main():
         return
 
     all_rows = []
-    batch_no = 0
 
     for i in range(0, len(asins), BATCH_SIZE):
-        batch_no += 1
         batch = asins[i:i + BATCH_SIZE]
-        print(f"[i] fetch protein batch {batch_no} ({len(batch)} ASINs)")
+        print(f"[i] fetch protein batch {i//BATCH_SIZE + 1}")
 
         data = fetch_batch(batch)
-        products = data.get("products", [])
+        if not data:
+            break
 
-        for p in products:
-            stats = p.get("stats", {})
-            bb = stats.get("buyBoxPrice")
+        for p in data.get("products", []):
+            sales_ranks = p.get("salesRanks") or {}
 
             row = {
                 "asin": p.get("asin"),
                 "title": p.get("title"),
                 "brand": p.get("brand"),
                 "imageurl": p.get("imagesCSV", "").split(",")[0] if p.get("imagesCSV") else None,
-                "price": bb // 100 if isinstance(bb, int) else None,
-                "salesrank": p.get("salesRanks", {}).get(str(DOMAIN_ID)),
+                "price": p.get("stats", {}).get("buyBoxPrice"),
+                "salesrank": sales_ranks.get(str(DOMAIN_ID)),
                 "rating": p.get("rating"),
                 "reviewcount": p.get("reviewCount"),
             }
 
-            # title が無いものは除外（事実）
             if row["asin"] and row["title"]:
                 all_rows.append(row)
 
-        # ★ token回復を待つ
         time.sleep(5)
 
     if not all_rows:
@@ -93,7 +97,6 @@ def main():
         json.dump(all_rows, f, ensure_ascii=False, indent=2)
 
     print(f"[OK] protein fetched {len(all_rows)} rows")
-    print(f"      output -> {OUT_FILE}")
 
 
 if __name__ == "__main__":
