@@ -3,7 +3,6 @@ name: Keepa Protein Sync
 on:
   workflow_dispatch:
   schedule:
-    # 6時間おき（UTC）
     - cron: "0 */6 * * *"
 
 jobs:
@@ -12,11 +11,9 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
@@ -25,24 +22,31 @@ jobs:
           pip install requests supabase
 
       # =========================
-      # ① Supabase → ASIN 抽出
+      # ① Keepa Product Finder
       # =========================
-      - name: Export ASINs (protein)
-        run: python scripts/export_asins.py protein 100
+      - name: Fetch ranking ASINs
+        run: python scripts/fetch_ranking_asins.py
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
 
       # =========================
-      # ② Keepa Product API（省token）
+      # ② Products API（表示用）
       # =========================
-      - name: Fetch protein product details
+      - name: Fetch product details
         run: python scripts/fetch_product_details.py
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
 
       # =========================
-      # ③ Supabase へ保存
+      # ③ Tracking 登録
+      # =========================
+      - name: Add tracking products
+        run: python scripts/add_tracking.py
+        env:
+          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+
+      # =========================
+      # ④ Supabase 保存
       # =========================
       - name: Import to Supabase
         run: python scripts/import_to_Supabase.py
