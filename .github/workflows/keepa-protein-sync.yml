@@ -9,29 +9,41 @@ on:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 30   # ★ 長時間は禁止
+    timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install deps
+      - name: Install dependencies
         run: |
           pip install requests supabase
 
+      # =========================
+      # ① Supabase → ASIN 抽出
+      # =========================
       - name: Export ASINs (protein)
         run: python scripts/export_asins.py protein 100
         env:
-          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
 
-      - name: Fetch protein details
+      # =========================
+      # ② Keepa Product API（省token）
+      # =========================
+      - name: Fetch protein product details
         run: python scripts/fetch_product_details.py
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
 
+      # =========================
+      # ③ Supabase へ保存
+      # =========================
       - name: Import to Supabase
         run: python scripts/import_to_Supabase.py
         env:

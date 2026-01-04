@@ -3,14 +3,17 @@ import sys
 import json
 from supabase import create_client
 
+# ===== 必須環境変数（Supabase専用）=====
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE"]
 
-CATEGORY = sys.argv[1]
+# ===== 引数 =====
+CATEGORY = sys.argv[1]              # protein / supplement
 LIMIT = int(sys.argv[2]) if len(sys.argv) > 2 else 30
 
 supa = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# ===== ASIN 取得 =====
 res = (
     supa.table("tracked_asins")
     .select("asin")
