@@ -4,39 +4,32 @@ import requests
 
 KEEPA_API_KEY = os.environ["KEEPA_API_KEY"]
 DOMAIN_ID = 5  # JP
-
 API_URL = "https://api.keepa.com/query"
 
-OUT_FILE = "ranking_asins.json"
+OUT_FILE = "asins_protein.json"
 
-query = {
+# 0件回避のため、まず title キーワードで母集団を作る
+QUERY = {
     "page": 0,
-    "perPage": 100,
-    "rootCategory": [3167641],  # プロテイン系カテゴリ（例）
-    "current_NEW_gte": 1000,
-    "current_NEW_lte": 10000,
+    "perPage": 200,
+    "title": "プロテイン",
     "hasReviews": True,
-    "sort": [
-        ["current_SALES", "asc"]
-    ]
+    # sort は Finder の仕様に合わせて必要なら調整
+    # まずは「検索結果が出る」ことを優先して指定しない
 }
 
 r = requests.post(
     API_URL,
-    params={
-        "key": KEEPA_API_KEY,
-        "domain": DOMAIN_ID,
-    },
-    json=query,
-    timeout=60
+    params={"key": KEEPA_API_KEY, "domain": DOMAIN_ID},
+    json=QUERY,
+    timeout=60,
 )
-
 r.raise_for_status()
-data = r.json()
 
-asins = data.get("asinList", [])
+data = r.json()
+asins = data.get("asinList", []) or []
 
 with open(OUT_FILE, "w", encoding="utf-8") as f:
     json.dump(asins, f, ensure_ascii=False, indent=2)
 
-print(f"[OK] ranking ASINs fetched: {len(asins)}")
+print(f"[OK] ranking ASINs fetched: {len(asins)} -> {OUT_FILE}")
