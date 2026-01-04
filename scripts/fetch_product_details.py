@@ -1,5 +1,5 @@
-import json
 import os
+import json
 import time
 import requests
 
@@ -9,13 +9,42 @@ DOMAIN_ID = 5  # Amazon.co.jp
 ASIN_FILE = os.environ.get("ASIN_FILE", "asins_protein.json")
 OUT_FILE = os.environ.get("OUT_FILE", "product_details.json")
 
-BATCH_SIZE = 20          # ← 仕様上 OK（最大100）
-MAX_BATCH_PER_RUN = 5    # ← GitHub Actions向け制限
-SLEEP_BETWEEN_BATCH = 2
-
 API_URL = "https://api.keepa.com/product"
+BATCH_SIZE = 20
+SLEEP_SEC = 2
 
 
+# -----------------------------
+# 分類ロジック
+# -----------------------------
+def classify_sub_category(title: str) -> str:
+    if not title:
+        return "other"
+
+    t = title.lower()
+
+    # BCAA
+    if "bcaa" in t:
+        return "bcaa"
+
+    # ソイ
+    if "ソイ" in title or "soy" in t:
+        return "soy"
+
+    # WPI（アイソレート）
+    if "wpi" in t or "isolate" in t or "アイソレート" in title:
+        return "wpi"
+
+    # ホエイ
+    if "ホエイ" in title or "whey" in t:
+        return "whey"
+
+    return "other"
+
+
+# -----------------------------
+# Product API
+# -----------------------------
 def fetch_products(asins):
     r = requests.get(
         API_URL,
@@ -23,15 +52,15 @@ def fetch_products(asins):
             "key": KEEPA_API_KEY,
             "domain": DOMAIN_ID,
             "asin": ",".join(asins),
-            "stats": 180,     # token消費なし
-            "update": -1,     # ★ 最重要：更新しない
-            "history": 0,     # ★ 最重要：履歴削除
+            "stats": 180,
+            "update": -1,
+            "history": 0,
         },
         timeout=60,
     )
 
     if r.status_code == 429:
-        print("[429] rate limited → skip this batch")
+        print("[429] rate limited -> skip batch")
         return []
 
     r.raise_for_status()
@@ -52,24 +81,19 @@ def main():
 
     rows = []
 
-    for batch_index, i in enumerate(range(0, len(asins), BATCH_SIZE)):
-        if batch_index >= MAX_BATCH_PER_RUN:
-            print("[STOP] reached max batch per run")
-            break
-
+    for i in range(0, len(asins), BATCH_SIZE):
         batch = asins[i:i + BATCH_SIZE]
-        print(f"[i] fetch batch {batch_index + 1} ({len(batch)} ASINs)")
+        print(f"[i] fetch products {i + 1} - {i + len(batch)}")
 
         products = fetch_products(batch)
-        if not products:
-            continue
 
         for p in products:
+            title = p.get("title")
             stats = p.get("stats") or {}
 
             row = {
                 "asin": p.get("asin"),
-                "title": p.get("title"),
+                "title": title,
                 "brand": p.get("brand"),
                 "imageurl": (
                     p.get("imagesCSV", "").split(",")[0]
@@ -77,15 +101,15 @@ def main():
                     else None
                 ),
                 "price": stats.get("buyBoxPrice"),
-                "salesrank": None,  # history=0 なので来ない
                 "rating": p.get("rating"),
                 "reviewcount": p.get("reviewCount"),
+                "sub_category": classify_sub_category(title),
             }
 
             if row["asin"] and row["title"]:
                 rows.append(row)
 
-        time.sleep(SLEEP_BETWEEN_BATCH)
+        time.sleep(SLEEP_SEC)
 
     if not rows:
         print("[SKIP] no product rows fetched")
@@ -94,8 +118,7 @@ def main():
     with open(OUT_FILE, "w", encoding="utf-8") as f:
         json.dump(rows, f, ensure_ascii=False, indent=2)
 
-    print(f"[OK] fetched {len(rows)} products")
-    print(f"     output -> {OUT_FILE}")
+    print(f"[OK] fetched {len(rows)} products -> {OUT_FILE}")
 
 
 if __name__ == "__main__":
