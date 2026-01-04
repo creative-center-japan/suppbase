@@ -5,6 +5,8 @@ import requests
 KEEPA_API_KEY = os.environ["KEEPA_API_KEY"]
 API_URL = "https://api.keepa.com/tracking"
 
+MAIN_DOMAIN_ID = 5  # Amazon.co.jp
+
 with open("ranking_asins.json", "r", encoding="utf-8") as f:
     asins = json.load(f)
 
@@ -12,7 +14,8 @@ payload = {
     "tracking": [
         {
             "asin": asin,
-            "trackingType": "REGULAR"
+            "trackingType": "REGULAR",
+            "mainDomainId": MAIN_DOMAIN_ID
         }
         for asin in asins[:50]
     ]
