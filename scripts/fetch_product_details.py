@@ -6,8 +6,8 @@ import requests
 KEEPA_API_KEY = os.environ["KEEPA_API_KEY"]
 DOMAIN_ID = 5  # Amazon.co.jp
 
-ASIN_FILE = "asins_protein.json"
-OUT_FILE = "product_details.json"
+ASIN_FILE = os.environ.get("ASIN_FILE", "asins_protein.json")
+OUT_FILE = os.environ.get("OUT_FILE", "product_details.json")
 
 BATCH_SIZE = 20          # ← 仕様上 OK（最大100）
 MAX_BATCH_PER_RUN = 5    # ← GitHub Actions向け制限

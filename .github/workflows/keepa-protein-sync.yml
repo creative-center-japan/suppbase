@@ -1,4 +1,4 @@
-name: Keepa Protein Sync
+name: Keepa Sync (Protein & Supplement)
 
 on:
   workflow_dispatch:
@@ -21,25 +21,47 @@ jobs:
         run: |
           pip install requests supabase
 
-      # 任意：カテゴリ候補をログ出し（普段はOFFでもOK）
-      # - name: Fetch category candidates
-      #   run: python scripts/fetch_categories.py
-      #   env:
-      #     KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
-      #     CATEGORY_TERM: "プロテイン"
-
-      - name: Fetch Best Sellers ASINs
+      # =========================
+      # Protein
+      # =========================
+      - name: Fetch Protein Best Sellers ASINs
         run: python scripts/fetch_best_sellers_asins.py
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
-          CATEGORY_ID: ${{ secrets.CATEGORY_ID }}
+          CATEGORY_ID: ${{ secrets.CATEGORY_ID_PROTEIN }}
+          OUT_FILE: asins_protein.json
 
-      - name: Fetch product details
+      - name: Fetch Protein product details
         run: python scripts/fetch_product_details.py
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+          ASIN_FILE: asins_protein.json
+          OUT_FILE: product_details.json
 
-      - name: Import to Supabase
+      - name: Import Protein to Supabase
+        run: python scripts/import_to_Supabase.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+
+      # =========================
+      # Supplement
+      # =========================
+      - name: Fetch Supplement Best Sellers ASINs
+        run: python scripts/fetch_best_sellers_asins.py
+        env:
+          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+          CATEGORY_ID: ${{ secrets.CATEGORY_ID_SUPPLEMENT }}
+          OUT_FILE: asins_supplement.json
+
+      - name: Fetch Supplement product details
+        run: python scripts/fetch_product_details.py
+        env:
+          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+          ASIN_FILE: asins_supplement.json
+          OUT_FILE: supplement_product_details.json
+
+      - name: Import Supplement to Supabase
         run: python scripts/import_to_Supabase.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
