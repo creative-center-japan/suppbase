@@ -21,33 +21,24 @@ jobs:
         run: |
           pip install requests supabase
 
-      # =========================
-      # ① Keepa Product Finder
-      # =========================
-      - name: Fetch ranking ASINs
-        run: python scripts/fetch_ranking_asins.py
+      # 任意：カテゴリ候補をログ出し（普段はOFFでもOK）
+      # - name: Fetch category candidates
+      #   run: python scripts/fetch_categories.py
+      #   env:
+      #     KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+      #     CATEGORY_TERM: "プロテイン"
+
+      - name: Fetch Best Sellers ASINs
+        run: python scripts/fetch_best_sellers_asins.py
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+          CATEGORY_ID: ${{ secrets.CATEGORY_ID }}
 
-      # =========================
-      # ② Products API（表示用）
-      # =========================
       - name: Fetch product details
         run: python scripts/fetch_product_details.py
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
 
-      # =========================
-      # ③ Tracking 登録
-      # =========================
-      - name: Add tracking products
-        run: python scripts/add_tracking.py
-        env:
-          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
-
-      # =========================
-      # ④ Supabase 保存
-      # =========================
       - name: Import to Supabase
         run: python scripts/import_to_Supabase.py
         env:
