@@ -3,49 +3,39 @@ import os
 import time
 import requests
 
-KEEPA_API_KEY = os.environ.get("KEEPA_API_KEY")
+KEEPA_API_KEY = os.environ["KEEPA_API_KEY"]
 DOMAIN_ID = 5  # Amazon.co.jp
+
 ASIN_FILE = "asins_protein.json"
 OUT_FILE = "product_details.json"
 
-BATCH_SIZE = 10
+BATCH_SIZE = 20          # ← 仕様上 OK（最大100）
+MAX_BATCH_PER_RUN = 5    # ← GitHub Actions向け制限
+SLEEP_BETWEEN_BATCH = 2
+
 API_URL = "https://api.keepa.com/product"
 
-MAX_429_RETRY = 5        # ★ 無限ループ防止
-SLEEP_ON_429 = 60
 
-def fetch_batch(asins):
-    retry_429 = 0
+def fetch_products(asins):
+    r = requests.get(
+        API_URL,
+        params={
+            "key": KEEPA_API_KEY,
+            "domain": DOMAIN_ID,
+            "asin": ",".join(asins),
+            "stats": 180,     # token消費なし
+            "update": -1,     # ★ 最重要：更新しない
+            "history": 0,     # ★ 最重要：履歴削除
+        },
+        timeout=60,
+    )
 
-    while True:
-        r = requests.get(
-            API_URL,
-            params={
-                "key": KEEPA_API_KEY,
-                "domain": DOMAIN_ID,
-                "asin": ",".join(asins),
-                "stats": 180,
-                "rating": 1,
-                "buybox": 1,
-                "update": 48,
-                "history": 0
-            },
-            timeout=60
-        )
+    if r.status_code == 429:
+        print("[429] rate limited → skip this batch")
+        return []
 
-        if r.status_code == 429:
-            retry_429 += 1
-            print(f"[429] rate limited ({retry_429}/{MAX_429_RETRY})")
-
-            if retry_429 >= MAX_429_RETRY:
-                print("[STOP] too many 429s. skip this batch")
-                return None
-
-            time.sleep(SLEEP_ON_429)
-            continue
-
-        r.raise_for_status()
-        return r.json()
+    r.raise_for_status()
+    return r.json().get("products", [])
 
 
 def main():
@@ -60,43 +50,52 @@ def main():
         print("[SKIP] no ASINs")
         return
 
-    all_rows = []
+    rows = []
 
-    for i in range(0, len(asins), BATCH_SIZE):
-        batch = asins[i:i + BATCH_SIZE]
-        print(f"[i] fetch protein batch {i//BATCH_SIZE + 1}")
-
-        data = fetch_batch(batch)
-        if not data:
+    for batch_index, i in enumerate(range(0, len(asins), BATCH_SIZE)):
+        if batch_index >= MAX_BATCH_PER_RUN:
+            print("[STOP] reached max batch per run")
             break
 
-        for p in data.get("products", []):
-            sales_ranks = p.get("salesRanks") or {}
+        batch = asins[i:i + BATCH_SIZE]
+        print(f"[i] fetch batch {batch_index + 1} ({len(batch)} ASINs)")
+
+        products = fetch_products(batch)
+        if not products:
+            continue
+
+        for p in products:
+            stats = p.get("stats") or {}
 
             row = {
                 "asin": p.get("asin"),
                 "title": p.get("title"),
                 "brand": p.get("brand"),
-                "imageurl": p.get("imagesCSV", "").split(",")[0] if p.get("imagesCSV") else None,
-                "price": p.get("stats", {}).get("buyBoxPrice"),
-                "salesrank": sales_ranks.get(str(DOMAIN_ID)),
+                "imageurl": (
+                    p.get("imagesCSV", "").split(",")[0]
+                    if p.get("imagesCSV")
+                    else None
+                ),
+                "price": stats.get("buyBoxPrice"),
+                "salesrank": None,  # history=0 なので来ない
                 "rating": p.get("rating"),
                 "reviewcount": p.get("reviewCount"),
             }
 
             if row["asin"] and row["title"]:
-                all_rows.append(row)
+                rows.append(row)
 
-        time.sleep(5)
+        time.sleep(SLEEP_BETWEEN_BATCH)
 
-    if not all_rows:
+    if not rows:
         print("[SKIP] no product rows fetched")
         return
 
     with open(OUT_FILE, "w", encoding="utf-8") as f:
-        json.dump(all_rows, f, ensure_ascii=False, indent=2)
+        json.dump(rows, f, ensure_ascii=False, indent=2)
 
-    print(f"[OK] protein fetched {len(all_rows)} rows")
+    print(f"[OK] fetched {len(rows)} products")
+    print(f"     output -> {OUT_FILE}")
 
 
 if __name__ == "__main__":
