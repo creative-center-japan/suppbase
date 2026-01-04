@@ -5,14 +5,15 @@ import requests
 KEEPA_API_KEY = os.environ["KEEPA_API_KEY"]
 API_URL = "https://api.keepa.com/tracking"
 
-with open("ranking_asins.json", "r") as f:
+# ranking_asins.json を前段で生成している前提
+with open("ranking_asins.json", "r", encoding="utf-8") as f:
     asins = json.load(f)
 
+# 上位50件だけ tracking
 payload = [
     {
         "asin": asin,
-        "type": "REGULAR",
-        "updateInterval": 12  # 12時間
+        "trackingType": "REGULAR"
     }
     for asin in asins[:50]
 ]
@@ -21,11 +22,16 @@ r = requests.post(
     API_URL,
     params={
         "key": KEEPA_API_KEY,
-        "type": "add",
+        "type": "add"
     },
     json=payload,
     timeout=60
 )
 
-r.raise_for_status()
-print("[OK] tracking added")
+# ★ 400 のときは内容を見る
+if not r.ok:
+    print("status:", r.status_code)
+    print("response:", r.text)
+    r.raise_for_status()
+
+print(f"[OK] tracking added for {len(payload)} ASINs")
