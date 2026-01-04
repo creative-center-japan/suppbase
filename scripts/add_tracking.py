@@ -2,6 +2,7 @@ import os
 import json
 import re
 import requests
+import time
 
 KEEPA_API_KEY = os.environ["KEEPA_API_KEY"]
 API_URL = "https://api.keepa.com/tracking"
@@ -15,40 +16,54 @@ IN_FILE = "asins_protein.json"
 with open(IN_FILE, "r", encoding="utf-8") as f:
     raw_asins = json.load(f)
 
-valid_asins = []
+# 正規ASINのみ
+asins = []
 seen = set()
-for asin in raw_asins:
-    if not isinstance(asin, str):
-        continue
-    asin = asin.strip().upper()
-    if asin in seen:
-        continue
-    if ASIN_PATTERN.match(asin):
-        valid_asins.append(asin)
-        seen.add(asin)
+for a in raw_asins:
+    if isinstance(a, str):
+        a = a.strip().upper()
+        if ASIN_PATTERN.match(a) and a not in seen:
+            asins.append(a)
+            seen.add(a)
 
-valid_asins = valid_asins[:MAX_TRACKING]
+asins = asins[:MAX_TRACKING]
 
-if not valid_asins:
-    print("[SKIP] no valid ASINs for tracking")
+if not asins:
+    print("[SKIP] no valid ASINs")
     raise SystemExit(0)
 
-payload = {
-    "mainDomainId": MAIN_DOMAIN_ID,
-    "tracking": [{"asin": a, "trackingType": "REGULAR"} for a in valid_asins],
-}
+success = 0
+failed = 0
 
-r = requests.post(
-    API_URL,
-    params={"key": KEEPA_API_KEY, "type": "add"},
-    json=payload,
-    headers={"Content-Type": "application/json"},
-    timeout=60,
-)
+for asin in asins:
+    payload = {
+        "mainDomainId": MAIN_DOMAIN_ID,
+        "tracking": [
+            {
+                "asin": asin,
+                "trackingType": "REGULAR"
+            }
+        ]
+    }
 
-if not r.ok:
-    print("status:", r.status_code)
-    print("response:", r.text)
-    r.raise_for_status()
+    r = requests.post(
+        API_URL,
+        params={"key": KEEPA_API_KEY, "type": "add"},
+        json=payload,
+        headers={"Content-Type": "application/json"},
+        timeout=30,
+    )
 
-print(f"[OK] tracking added for {len(valid_asins)} ASINs")
+    if r.ok:
+        success += 1
+        print(f"[OK] tracking added: {asin}")
+    else:
+        failed += 1
+        print(f"[SKIP] tracking failed: {asin}")
+        # invalid ASIN は無視して続行
+        time.sleep(1)
+        continue
+
+    time.sleep(1)  # Keepa対策
+
+print(f"[DONE] tracking success={success}, failed={failed}")
