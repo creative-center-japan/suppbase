@@ -11,11 +11,11 @@ with open("ranking_asins.json", "r", encoding="utf-8") as f:
     asins = json.load(f)
 
 payload = {
+    "mainDomainId": MAIN_DOMAIN_ID,
     "tracking": [
         {
             "asin": asin,
-            "trackingType": "REGULAR",
-            "mainDomainId": MAIN_DOMAIN_ID
+            "trackingType": "REGULAR"
         }
         for asin in asins[:50]
     ]
@@ -28,9 +28,7 @@ r = requests.post(
         "type": "add"
     },
     json=payload,
-    headers={
-        "Content-Type": "application/json"
-    },
+    headers={"Content-Type": "application/json"},
     timeout=60
 )
 
