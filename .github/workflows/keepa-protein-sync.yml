@@ -9,7 +9,7 @@ on:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 350
+    timeout-minutes: 30   # ★ 長時間は禁止
 
     steps:
       - uses: actions/checkout@v4
@@ -22,34 +22,18 @@ jobs:
         run: |
           pip install requests supabase
 
-      # ===== ASIN 収集（protein）=====
-      - name: Collect protein ASINs from Deal search
-        env:
-          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
-        run: |
-          python scripts/fetch_protein_from_deal_search.py
-
-      # ===== ASIN エクスポート =====
       - name: Export ASINs (protein)
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
-        run: |
-          python scripts/export_asins.py protein 100
-
-      # ===== 詳細取得 =====
-      - name: Fetch protein details
+        run: python scripts/export_asins.py protein 100
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
-        run: |
-          python scripts/fetch_product_details.py
 
-      # ===== DB 反映 =====
+      - name: Fetch protein details
+        run: python scripts/fetch_product_details.py
+        env:
+          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+
       - name: Import to Supabase
+        run: python scripts/import_to_Supabase.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
-        run: |
-          python scripts/import_to_Supabase.py
