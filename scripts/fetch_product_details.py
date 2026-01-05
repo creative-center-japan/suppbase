@@ -13,29 +13,68 @@ API_URL = "https://api.keepa.com/product"
 BATCH_SIZE = 20
 SLEEP_SEC = 2
 
+AMAZON_IMAGE_BASE = "https://images-na.ssl-images-amazon.com"
+
 
 # -----------------------------
-# 分類ロジック
+# ユーティリティ
 # -----------------------------
+def build_image_url(images_csv: str | None) -> str | None:
+    """
+    Keepa imagesCSV -> Amazon CDN 完全URL
+    """
+    if not images_csv:
+        return None
+
+    first = images_csv.split(",")[0]
+    if first.startswith("http"):
+        return first
+
+    return f"{AMAZON_IMAGE_BASE}{first}"
+
+
+def yen(price):
+    """
+    Keepaは最小通貨単位（円×100）
+    """
+    if isinstance(price, int) and price > 0:
+        return price // 100
+    return None
+
+
+def calc_score(price, rating, reviewcount):
+    """
+    仮スコア（あとで調整前提）
+    """
+    score = 0
+
+    if rating:
+        score += rating * 20
+
+    if reviewcount:
+        score += min(reviewcount, 500)
+
+    if price:
+        score += max(0, 5000 - price) / 100
+
+    return int(score)
+
+
 def classify_sub_category(title: str) -> str:
     if not title:
         return "other"
 
     t = title.lower()
 
-    # BCAA
     if "bcaa" in t:
         return "bcaa"
 
-    # ソイ
     if "ソイ" in title or "soy" in t:
         return "soy"
 
-    # WPI（アイソレート）
     if "wpi" in t or "isolate" in t or "アイソレート" in title:
         return "wpi"
 
-    # ホエイ
     if "ホエイ" in title or "whey" in t:
         return "whey"
 
@@ -43,7 +82,7 @@ def classify_sub_category(title: str) -> str:
 
 
 # -----------------------------
-# Product API
+# Keepa Product API
 # -----------------------------
 def fetch_products(asins):
     r = requests.get(
@@ -91,19 +130,22 @@ def main():
             title = p.get("title")
             stats = p.get("stats") or {}
 
+            price_yen = yen(stats.get("buyBoxPrice"))
+
             row = {
                 "asin": p.get("asin"),
                 "title": title,
                 "brand": p.get("brand"),
-                "imageurl": (
-                    p.get("imagesCSV", "").split(",")[0]
-                    if p.get("imagesCSV")
-                    else None
-                ),
-                "price": stats.get("buyBoxPrice"),
+                "imageurl": build_image_url(p.get("imagesCSV")),
+                "price": price_yen,
                 "rating": p.get("rating"),
                 "reviewcount": p.get("reviewCount"),
                 "sub_category": classify_sub_category(title),
+                "score": calc_score(
+                    price_yen,
+                    p.get("rating"),
+                    p.get("reviewCount"),
+                ),
             }
 
             if row["asin"] and row["title"]:
