@@ -1,8 +1,8 @@
-name: Keepa soy Sync
+name: Keepa Sync - Soy Protein
 
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "5,20,35,50 * * * *"
   workflow_dispatch:
 
 jobs:
@@ -11,23 +11,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: "3.11" }
+        with:
+          python-version: "3.11"
       - run: pip install requests supabase
 
-      - run: python scripts/fetch_best_sellers_asins.py
+      - name: Fetch Soy Best Sellers ASINs
+        run: python scripts/fetch_best_sellers_asins.py
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
           CATEGORY_ID: 3457071051
-          OUT_FILE: asins_whey.json
+          OUT_FILE: asins_soy.json
 
-      - run: python scripts/fetch_product_details.py
+      - name: Fetch Soy product details
+        run: python scripts/fetch_product_details.py
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
-          ASIN_FILE: asins_whey.json
-          OUT_FILE: product_details.json
-          MAX_PRODUCTS: 20
+          ASIN_FILE: asins_soy.json
+          OUT_FILE: product_details_soy.json
+          MAX_PRODUCTS: 10
 
-      - run: python scripts/import_to_Supabase.py
+      - name: Import Soy to Supabase
+        run: python scripts/import_to_Supabase.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
