@@ -9,14 +9,13 @@ SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE"]
 MAX_PRODUCTS = int(os.environ.get("MAX_PRODUCTS", "20"))
 
 # ===== CONST =====
-DOMAIN_ID = 5  # Amazon.co.jp
+DOMAIN_ID = 5
 API_URL = "https://api.keepa.com/product"
 IMG_BASE = "https://images-na.ssl-images-amazon.com"
 
-# ===== CLIENT =====
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ===== ASIN 取得 =====
+# ===== ASIN 取得（rank 不使用）=====
 res = (
     supabase.table("tracked_asins")
     .select("asin")
@@ -56,20 +55,18 @@ if not products:
     print("[SKIP] no products from keepa")
     raise SystemExit(0)
 
-# ===== 正規化 =====
 rows = []
 
 for p in products:
     stats = p.get("stats") or {}
     price = stats.get("buyBoxPrice")
 
-    # --- image 判定 ---
+    # ===== image 判定 =====
     image_url = None
     img_csv = p.get("imagesCSV")
 
     if img_csv:
         first = img_csv.split(",")[0]
-        # Amazon の「NO IMAGE」系を除外
         if first and not any(
             k in first.lower()
             for k in ["noimage", "no-image", "placeholder"]
@@ -80,7 +77,7 @@ for p in products:
         "asin": p.get("asin"),
         "title": p.get("title"),
         "brand": p.get("brand"),
-        "imageurl": image_url,  # ← null になり得る
+        "imageurl": image_url,
         "price": price // 100 if isinstance(price, int) else None,
         "rating": p.get("rating"),
         "reviewcount": p.get("reviewCount"),
@@ -90,7 +87,6 @@ for p in products:
         ),
     })
 
-# ===== UPSERT =====
 supabase.table("products").upsert(rows).execute()
 
 print(f"[OK] updated {len(rows)} products")

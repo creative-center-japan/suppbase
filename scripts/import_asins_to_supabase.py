@@ -1,35 +1,23 @@
-import os, json
-from datetime import datetime
+import json
+import os
 from supabase import create_client
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE"]
 
-ASIN_FILE = os.environ["ASIN_FILE"]
-CATEGORY = os.environ["CATEGORY"]
-
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-if not os.path.exists(ASIN_FILE):
-    print(f"[SKIP] {ASIN_FILE} not found")
-    raise SystemExit(0)
+# ===== JSON 読み込み =====
+with open("asins_soy.json", "r", encoding="utf-8") as f:
+    asins = json.load(f)
 
-asins = json.load(open(ASIN_FILE, "r", encoding="utf-8"))
 if not asins:
-    print("[SKIP] no ASINs to import")
+    print("[SKIP] no asins")
     raise SystemExit(0)
 
-now = datetime.utcnow().isoformat()
-rows = []
-
-for idx, asin in enumerate(asins[:200]):
-    rows.append({
-        "asin": asin,
-        "category": CATEGORY,
-        "source": "best_sellers",
-        "rank": idx + 1,
-        "last_seen_at": now,
-    })
+# ===== tracked_asins は asin のみ =====
+rows = [{"asin": asin} for asin in asins]
 
 supabase.table("tracked_asins").upsert(rows).execute()
-print(f"[OK] upserted {len(rows)} tracked_asins ({CATEGORY})")
+
+print(f"[OK] imported {len(rows)} asins into tracked_asins")
