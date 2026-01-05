@@ -1,0 +1,33 @@
+name: Keepa Whey Sync
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install requests supabase
+
+      - run: python scripts/fetch_best_sellers_asins.py
+        env:
+          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+          CATEGORY_ID: 3457072051
+          OUT_FILE: asins_whey.json
+
+      - run: python scripts/fetch_product_details.py
+        env:
+          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+          ASIN_FILE: asins_whey.json
+          OUT_FILE: product_details.json
+          MAX_PRODUCTS: 20
+
+      - run: python scripts/import_to_Supabase.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
