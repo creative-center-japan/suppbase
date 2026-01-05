@@ -1,4 +1,4 @@
-import os, time, requests
+import os, requests
 from supabase import create_client
 
 KEEPA_API_KEY = os.environ["KEEPA_API_KEY"]
@@ -12,10 +12,11 @@ IMG_BASE = "https://images-na.ssl-images-amazon.com"
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# ❌ .order("rank") を削除（エラー原因）
 res = (
     supabase.table("tracked_asins")
     .select("asin")
-    .order("rank")
+    .order("asin")          # ← 安全な列で並び替え
     .limit(MAX_PRODUCTS)
     .execute()
 )
