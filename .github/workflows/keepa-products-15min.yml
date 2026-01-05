@@ -20,15 +20,24 @@ jobs:
       - name: Install dependencies
         run: pip install requests supabase
 
+      # ==========================
+      # Keepa 取得（429は想定内）
+      # ==========================
       - name: Fetch product details from Supabase ASINs
+        id: fetch
         run: python scripts/fetch_product_details_from_supabase.py
+        continue-on-error: true
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
           MAX_PRODUCTS: 20
 
+      # ==========================
+      # fetch が成功したときのみ import
+      # ==========================
       - name: Import products to Supabase
+        if: ${{ steps.fetch.outcome == 'success' }}
         run: python scripts/import_to_Supabase.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
