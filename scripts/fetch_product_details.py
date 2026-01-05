@@ -9,6 +9,9 @@ DOMAIN_ID = 5  # Amazon.co.jp
 ASIN_FILE = os.environ.get("ASIN_FILE", "asins_protein.json")
 OUT_FILE = os.environ.get("OUT_FILE", "product_details.json")
 
+# ★ 追加：最大取得件数（デフォルト20）
+MAX_PRODUCTS = int(os.environ.get("MAX_PRODUCTS", "20"))
+
 API_URL = "https://api.keepa.com/product"
 BATCH_SIZE = 20
 SLEEP_SEC = 2
@@ -19,24 +22,16 @@ AMAZON_IMAGE_BASE = "https://images-na.ssl-images-amazon.com"
 # -----------------------------
 # ユーティリティ
 # -----------------------------
-def build_image_url(images_csv: str | None) -> str | None:
-    """
-    Keepa imagesCSV -> Amazon CDN 完全URL
-    """
+def build_image_url(images_csv):
     if not images_csv:
         return None
-
     first = images_csv.split(",")[0]
     if first.startswith("http"):
         return first
-
     return f"{AMAZON_IMAGE_BASE}{first}"
 
 
 def yen(price):
-    """
-    Keepaは最小通貨単位（円×100）
-    """
     if isinstance(price, int) and price > 0:
         return price // 100
     return None
@@ -44,12 +39,12 @@ def yen(price):
 
 def calc_score(price, rating, reviewcount):
     """
-    仮スコア（あとで調整前提）
+    仮スコア（確認用）
     """
     score = 0
 
     if rating:
-        score += rating * 20
+        score += rating * 20      # 評価重視
 
     if reviewcount:
         score += min(reviewcount, 500)
@@ -60,7 +55,7 @@ def calc_score(price, rating, reviewcount):
     return int(score)
 
 
-def classify_sub_category(title: str) -> str:
+def classify_sub_category(title):
     if not title:
         return "other"
 
@@ -68,13 +63,10 @@ def classify_sub_category(title: str) -> str:
 
     if "bcaa" in t:
         return "bcaa"
-
     if "ソイ" in title or "soy" in t:
         return "soy"
-
     if "wpi" in t or "isolate" in t or "アイソレート" in title:
         return "wpi"
-
     if "ホエイ" in title or "whey" in t:
         return "whey"
 
@@ -118,6 +110,9 @@ def main():
         print("[SKIP] no ASINs")
         return
 
+    # ★ 上位N件だけ使う
+    asins = asins[:MAX_PRODUCTS]
+
     rows = []
 
     for i in range(0, len(asins), BATCH_SIZE):
@@ -141,6 +136,7 @@ def main():
                 "rating": p.get("rating"),
                 "reviewcount": p.get("reviewCount"),
                 "sub_category": classify_sub_category(title),
+                # ★ スコアを必ず入れる
                 "score": calc_score(
                     price_yen,
                     p.get("rating"),
