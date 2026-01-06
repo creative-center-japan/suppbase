@@ -7,6 +7,19 @@ import { Pool } from 'pg';
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
+type Row = {
+  asin: string;
+  title: string;
+  brand: string | null;
+  buyboxprice: number | null;
+  buyboxfallback: number | null;
+  salesrank: number | null;
+  droprate: number | null;
+  droprateprev: number | null;
+  score: number | null;
+  imageurl: string | null;
+};
+
 let _pool: Pool | null = null;
 
 function normalizeDbUrl(raw: string) {
@@ -31,36 +44,31 @@ function getPool() {
 }
 
 function pickCol(cols: Set<string>, lower: string, alias: string) {
-  if (cols.has(lower)) return `"${lower}" AS ${alias}`;
-  return `NULL AS ${alias}`;
+  return cols.has(lower) ? `"${lower}" AS ${alias}` : `NULL AS ${alias}`;
 }
 
-// ★ imageurl 正規化（API 最終防波堤）
+// ===== imageurl 正規化（最終防波堤・強化版）=====
 function normalizeImageUrl(imageurl: string | null): string | null {
   if (!imageurl) return null;
 
-  if (
-    imageurl.startsWith('http://') ||
-    imageurl.startsWith('https://')
-  ) {
+  if (imageurl.startsWith('https://images-na.ssl-images-amazon.com/images/I/')) {
     return imageurl;
   }
 
-  return `https://images-na.ssl-images-amazon.com/images/I/${imageurl}`;
-}
+  if (imageurl.startsWith('https://images-na.ssl-images-amazon.com')) {
+    const filename = imageurl.replace(
+      /^https:\/\/images-na\.ssl-images-amazon\.com\/?/,
+      ''
+    );
+    return `https://images-na.ssl-images-amazon.com/images/I/${filename}`;
+  }
 
-type Row = {
-  asin: string;
-  title: string;
-  brand: string | null;
-  buyboxprice: number | null;
-  buyboxfallback: number | null;
-  salesrank: number | null;
-  droprate: number | null;
-  droprateprev: number | null;
-  score: number | null;
-  imageurl: string | null;
-};
+  if (!imageurl.startsWith('http')) {
+    return `https://images-na.ssl-images-amazon.com/images/I/${imageurl}`;
+  }
+
+  return null;
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -73,20 +81,61 @@ export async function GET(req: NextRequest) {
     let table = 'products';
     let where = '';
 
-    if (type === 'whey') table = 'v_rank_whey_30d';
-    else if (type === 'isolate') table = 'v_rank_wpi_30d';
-    else if (type === 'soy') {
+    // ===== プロテイン系 =====
+    if (type === 'whey') {
+      table = 'v_rank_whey_30d';
+    } else if (type === 'isolate') {
+      table = 'v_rank_wpi_30d';
+    } else if (type === 'soy') {
       table = 'products';
       where = `
-        WHERE
-          title ILIKE '%ソイ%' OR
-          title ILIKE '%soy%' OR
-          title ILIKE '%SOY%' OR
-          title ILIKE '%大豆%' OR
-          title ILIKE '%植物性%'
+        WHERE imageurl IS NOT NULL
+          AND (
+            title ILIKE '%ソイ%' OR
+            title ILIKE '%soy%' OR
+            title ILIKE '%SOY%' OR
+            title ILIKE '%大豆%' OR
+            title ILIKE '%植物性%'
+          )
       `;
     }
 
+    // ===== サプリ系 =====
+    else if (type === 'bcaa') {
+      table = 'products';
+      where = `
+        WHERE imageurl IS NOT NULL
+          AND (
+            title ILIKE '%BCAA%' OR
+            title ILIKE '%bcaa%' OR
+            title ILIKE '%ＢＣＡＡ%'
+          )
+          AND title NOT ILIKE '%プロテイン%'
+          AND title NOT ILIKE '%protein%'
+          AND title NOT ILIKE '%ホエイ%'
+          AND title NOT ILIKE '%whey%'
+          AND title NOT ILIKE '%wpc%'
+          AND title NOT ILIKE '%wpi%'
+      `;
+    } else if (type === 'eaa') {
+      table = 'products';
+      where = `
+        WHERE imageurl IS NOT NULL
+          AND (
+            title ILIKE '%EAA%' OR
+            title ILIKE '%eaa%' OR
+            title ILIKE '%ＥＡＡ%'
+          )
+          AND title NOT ILIKE '%プロテイン%'
+          AND title NOT ILIKE '%protein%'
+          AND title NOT ILIKE '%ホエイ%'
+          AND title NOT ILIKE '%whey%'
+          AND title NOT ILIKE '%wpc%'
+          AND title NOT ILIKE '%wpi%'
+      `;
+    }
+
+    // ===== ORDER =====
     let order = `
       ORDER BY
         COALESCE(score, 0) DESC,
@@ -116,7 +165,6 @@ export async function GET(req: NextRequest) {
       WHERE table_schema='public'
         AND table_name='${table}'
     `);
-
     const cols = new Set(meta.rows.map(r => r.column_name));
 
     const selectParts = [
