@@ -145,7 +145,9 @@ export default function SupplementRankingPage() {
 
   useEffect(() => {
     setLoading(true);
-    fetch('/api/supplements', { cache: 'no-store' })
+
+    // ★ 正しい API（統合後）
+    fetch('/api/ranking?type=bcaa', { cache: 'no-store' })
       .then(res => res.json())
       .then(data => setItems(Array.isArray(data) ? data : []))
       .catch(() => setItems([]))
