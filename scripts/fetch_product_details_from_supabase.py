@@ -1,4 +1,5 @@
 import os
+import time
 import requests
 from supabase import create_client
 
@@ -6,16 +7,35 @@ from supabase import create_client
 KEEPA_API_KEY = os.environ["KEEPA_API_KEY"]
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE"]
-MAX_PRODUCTS = int(os.environ.get("MAX_PRODUCTS", "20"))
 
-# ===== CONST =====
 DOMAIN_ID = 5
 API_URL = "https://api.keepa.com/product"
-IMG_BASE = "https://images-na.ssl-images-amazon.com"
+IMG_HOST = "https://images-na.ssl-images-amazon.com"
+
+MAX_PRODUCTS = int(os.environ.get("MAX_PRODUCTS", "50"))
+BATCH_SIZE = 20
+SLEEP_SEC = 2
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ===== ASIN 取得（rank 不使用）=====
+# ===== image 正規化 =====
+def normalize_image_url(images_csv: str | None):
+    if not images_csv:
+        return None
+
+    first = images_csv.split(",")[0].strip()
+    if not first:
+        return None
+
+    if first.startswith("http://") or first.startswith("https://"):
+        return first
+
+    if first.startswith("/images/"):
+        return f"{IMG_HOST}{first}"
+
+    return f"{IMG_HOST}/images/I/{first}"
+
+# ===== ASIN 取得 =====
 res = (
     supabase.table("tracked_asins")
     .select("asin")
@@ -25,68 +45,55 @@ res = (
 )
 
 asins = [r["asin"] for r in (res.data or [])]
-
 if not asins:
-    print("[SKIP] no tracked asins")
+    print("[SKIP] no asins")
     raise SystemExit(0)
 
-# ===== Keepa API =====
-r = requests.get(
-    API_URL,
-    params={
-        "key": KEEPA_API_KEY,
-        "domain": DOMAIN_ID,
-        "asin": ",".join(asins),
-        "stats": 180,
-        "update": -1,
-        "history": 0,
-    },
-    timeout=60,
-)
-
-if r.status_code == 429:
-    print("[429] rate limited")
-    raise SystemExit(2)
-
-r.raise_for_status()
-
-products = r.json().get("products", [])
-if not products:
-    print("[SKIP] no products from keepa")
-    raise SystemExit(0)
-
+# ===== Keepa fetch =====
 rows = []
 
-for p in products:
-    stats = p.get("stats") or {}
-    price = stats.get("buyBoxPrice")
+for i in range(0, len(asins), BATCH_SIZE):
+    batch = asins[i:i+BATCH_SIZE]
 
-    # ===== image 判定 =====
-    image_url = None
-    img_csv = p.get("imagesCSV")
+    r = requests.get(
+        API_URL,
+        params={
+            "key": KEEPA_API_KEY,
+            "domain": DOMAIN_ID,
+            "asin": ",".join(batch),
+            "stats": 180,
+            "update": -1,
+            "history": 0,
+        },
+        timeout=60,
+    )
 
-    if img_csv:
-        first = img_csv.split(",")[0]
-        if first and not any(
-            k in first.lower()
-            for k in ["noimage", "no-image", "placeholder"]
-        ):
-            image_url = f"{IMG_BASE}{first}"
+    if r.status_code == 429:
+        print("[429] rate limited → skip batch")
+        continue
 
-    rows.append({
-        "asin": p.get("asin"),
-        "title": p.get("title"),
-        "brand": p.get("brand"),
-        "imageurl": image_url,
-        "price": price // 100 if isinstance(price, int) else None,
-        "rating": p.get("rating"),
-        "reviewcount": p.get("reviewCount"),
-        "score": int(
-            (p.get("rating") or 0) * 20
-            + min(p.get("reviewCount") or 0, 500)
-        ),
-    })
+    r.raise_for_status()
+    products = r.json().get("products", [])
+
+    for p in products:
+        stats = p.get("stats") or {}
+        price = stats.get("buyBoxPrice")
+
+        rows.append({
+            "asin": p.get("asin"),
+            "title": p.get("title"),
+            "brand": p.get("brand"),
+            "imageurl": normalize_image_url(p.get("imagesCSV")),
+            "buyboxprice": price,
+            "rating": p.get("rating"),
+            "reviewcount": p.get("reviewCount"),
+        })
+
+    time.sleep(SLEEP_SEC)
+
+if not rows:
+    print("[SKIP] no rows")
+    raise System_toggleExit(0)
 
 supabase.table("products").upsert(rows).execute()
-
-print(f"[OK] updated {len(rows)} products")
+print(f"[OK] upserted {len(rows)} products")

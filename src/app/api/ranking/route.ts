@@ -30,10 +30,23 @@ function getPool() {
   return _pool;
 }
 
-// 実在するカラムだけ SELECT
 function pickCol(cols: Set<string>, lower: string, alias: string) {
   if (cols.has(lower)) return `"${lower}" AS ${alias}`;
   return `NULL AS ${alias}`;
+}
+
+// ★ imageurl 正規化（API 最終防波堤）
+function normalizeImageUrl(imageurl: string | null): string | null {
+  if (!imageurl) return null;
+
+  if (
+    imageurl.startsWith('http://') ||
+    imageurl.startsWith('https://')
+  ) {
+    return imageurl;
+  }
+
+  return `https://images-na.ssl-images-amazon.com/images/I/${imageurl}`;
 }
 
 type Row = {
@@ -55,22 +68,13 @@ export async function GET(req: NextRequest) {
 
     const type = (sp.get('type') ?? 'whey').toLowerCase();
     const sort = (sp.get('sort') ?? 'score').toLowerCase();
-
-    // ★ API 側で必ず TOP10 に制限
     const limit = 10;
 
-    // ===== 参照テーブル / WHERE =====
     let table = 'products';
     let where = '';
 
-    // ===== protein =====
-    if (type === 'whey') {
-      table = 'v_rank_whey_30d';
-    } else if (type === 'isolate') {
-      table = 'v_rank_wpi_30d';
-    }
-
-    // ★ ソイだけは VIEW を使わず products 直参照
+    if (type === 'whey') table = 'v_rank_whey_30d';
+    else if (type === 'isolate') table = 'v_rank_wpi_30d';
     else if (type === 'soy') {
       table = 'products';
       where = `
@@ -83,26 +87,6 @@ export async function GET(req: NextRequest) {
       `;
     }
 
-    // ===== supplements =====
-    else if (type === 'bcaa') {
-      table = 'products';
-      where = `
-        WHERE
-          title ILIKE '%BCAA%' OR
-          title ILIKE '%bcaa%' OR
-          title ILIKE '%ＢＣＡＡ%'
-      `;
-    } else if (type === 'eaa') {
-      table = 'products';
-      where = `
-        WHERE
-          title ILIKE '%EAA%' OR
-          title ILIKE '%eaa%' OR
-          title ILIKE '%ＥＡＡ%'
-      `;
-    }
-
-    // ===== ORDER BY（未成熟データでも安定）=====
     let order = `
       ORDER BY
         COALESCE(score, 0) DESC,
@@ -126,13 +110,13 @@ export async function GET(req: NextRequest) {
 
     const pool = getPool();
 
-    // ===== 実在カラム取得 =====
     const meta = await pool.query<{ column_name: string }>(`
       SELECT column_name
       FROM information_schema.columns
       WHERE table_schema='public'
         AND table_name='${table}'
     `);
+
     const cols = new Set(meta.rows.map(r => r.column_name));
 
     const selectParts = [
@@ -159,7 +143,6 @@ export async function GET(req: NextRequest) {
 
     const { rows } = await pool.query<Row>(sql, [limit]);
 
-    // ===== rank は UI 用に必ず 1〜10 で再採番 =====
     const items = rows.map((p, i) => {
       const rawPrice = p.buyboxprice ?? p.buyboxfallback;
       const price = rawPrice != null ? Math.round(rawPrice / 100) : null;
@@ -173,15 +156,14 @@ export async function GET(req: NextRequest) {
         dropRate: p.droprate ?? 0,
         dropRateDiff: (p.droprate ?? 0) - (p.droprateprev ?? 0),
         score: p.score ?? 0,
-        imageUrl: p.imageurl,
+        imageUrl: normalizeImageUrl(p.imageurl),
         affiliateUrl: `https://www.amazon.co.jp/dp/${p.asin}`,
       };
     });
 
     return NextResponse.json(items);
-  } catch (e: unknown) {
+  } catch (e) {
     console.error('❌ /api/ranking error:', e);
-    // フロントを壊さないため 200 + 空配列
     return NextResponse.json([], { status: 200 });
   }
 }
