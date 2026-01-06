@@ -1,3 +1,5 @@
+# scripts/fetch_product_details_from_supabase.py
+
 import os
 import time
 import requests
@@ -7,19 +9,17 @@ from supabase import create_client
 KEEPA_API_KEY = os.environ["KEEPA_API_KEY"]
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE"]
+MAX_PRODUCTS = int(os.environ.get("MAX_PRODUCTS", "40"))
 
-DOMAIN_ID = 5
+# ===== CONST =====
+DOMAIN_ID = 5  # Amazon.co.jp
 API_URL = "https://api.keepa.com/product"
 IMG_HOST = "https://images-na.ssl-images-amazon.com"
 
-MAX_PRODUCTS = int(os.environ.get("MAX_PRODUCTS", "50"))
-BATCH_SIZE = 20
-SLEEP_SEC = 2
-
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ===== image 正規化 =====
-def normalize_image_url(images_csv: str | None):
+# ===== image URL 正規化 =====
+def normalize_image_url(images_csv):
     if not images_csv:
         return None
 
@@ -35,25 +35,26 @@ def normalize_image_url(images_csv: str | None):
 
     return f"{IMG_HOST}/images/I/{first}"
 
-# ===== ASIN 取得 =====
+# ===== ASIN 取得（recent-first）=====
 res = (
     supabase.table("tracked_asins")
     .select("asin")
-    .order("asin")
+    .order("last_seen_at", desc=True)  # ★重要
     .limit(MAX_PRODUCTS)
     .execute()
 )
 
 asins = [r["asin"] for r in (res.data or [])]
+
 if not asins:
-    print("[SKIP] no asins")
+    print("[SKIP] no tracked asins")
     raise SystemExit(0)
 
-# ===== Keepa fetch =====
 rows = []
 
-for i in range(0, len(asins), BATCH_SIZE):
-    batch = asins[i:i+BATCH_SIZE]
+# ===== Keepa fetch =====
+for i in range(0, len(asins), 20):
+    batch = asins[i:i + 20]
 
     r = requests.get(
         API_URL,
@@ -89,11 +90,11 @@ for i in range(0, len(asins), BATCH_SIZE):
             "reviewcount": p.get("reviewCount"),
         })
 
-    time.sleep(SLEEP_SEC)
+    time.sleep(2)
 
 if not rows:
-    print("[SKIP] no rows")
-    raise System_toggleExit(0)
+    print("[SKIP] no product rows")
+    raise SystemExit(0)
 
 supabase.table("products").upsert(rows).execute()
 print(f"[OK] upserted {len(rows)} products")

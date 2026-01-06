@@ -1,4 +1,4 @@
-name: Keepa Daily Best Sellers (ASIN Collect)
+name: Keepa Daily ASIN Collect
 
 on:
   schedule:
@@ -17,18 +17,17 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
-        run: pip install requests supabase
+      - run: pip install requests supabase
 
       # ---- Whey ----
-      - name: Fetch Whey Best Sellers ASINs
+      - name: Fetch Whey ASINs
         run: python scripts/fetch_best_sellers_asins.py
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
           CATEGORY_ID: ${{ secrets.CATEGORY_ID_PROTEIN }}
           OUT_FILE: asins_whey.json
 
-      - name: Import Whey ASINs to Supabase
+      - name: Register Whey ASINs
         run: python scripts/import_asins_to_supabase.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -37,14 +36,14 @@ jobs:
           CATEGORY: whey
 
       # ---- Soy ----
-      - name: Fetch Soy Best Sellers ASINs
+      - name: Fetch Soy ASINs
         run: python scripts/fetch_best_sellers_asins.py
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
           CATEGORY_ID: ${{ secrets.CATEGORY_ID_PROTEIN_SOY }}
           OUT_FILE: asins_soy.json
 
-      - name: Import Soy ASINs to Supabase
+      - name: Register Soy ASINs
         run: python scripts/import_asins_to_supabase.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -53,14 +52,14 @@ jobs:
           CATEGORY: soy
 
       # ---- BCAA ----
-      - name: Fetch BCAA Best Sellers ASINs
+      - name: Fetch BCAA ASINs
         run: python scripts/fetch_best_sellers_asins.py
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
           CATEGORY_ID: ${{ secrets.CATEGORY_ID_SUPPLEMENT }}
           OUT_FILE: asins_bcaa.json
 
-      - name: Import BCAA ASINs to Supabase
+      - name: Register BCAA ASINs
         run: python scripts/import_asins_to_supabase.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
