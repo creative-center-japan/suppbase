@@ -1,9 +1,21 @@
+// healthy-site\src\app\rankings\route.ts
+
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { Pool } from 'pg';
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
+type Row = {
+  asin: string;
+  title: string;
+  brand: string | null;
+  buyboxprice: number | null;
+  buyboxfallback: number | null;
+  score: number | null;
+  imageurl: string | null;
+};
 
 let _pool: Pool | null = null;
 
@@ -82,7 +94,6 @@ export async function GET(req: NextRequest) {
     }
 
     const order = `ORDER BY COALESCE(score, 0) DESC, updated_at DESC`;
-
     const pool = getPool();
 
     const meta = await pool.query<{ column_name: string }>(`
@@ -112,10 +123,10 @@ export async function GET(req: NextRequest) {
       LIMIT $1
     `;
 
-    const { rows } = await pool.query<any>(sql, [limit]);
+    const { rows } = await pool.query<Row>(sql, [limit]);
 
     return NextResponse.json(
-      rows.map((p: any, i: number) => ({
+      rows.map((p, i) => ({
         rank: i + 1,
         asin: p.asin,
         title: p.title,
