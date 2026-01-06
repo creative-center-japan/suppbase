@@ -1,0 +1,35 @@
+name: Keepa Collect BCAA ASINs
+
+on:
+  schedule:
+    - cron: "40 18 * * *"  # JST 03:40
+  workflow_dispatch:
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install requests supabase
+
+      - name: Fetch BCAA Best Sellers ASINs
+        run: python scripts/fetch_best_sellers_asins.py
+        env:
+          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+          CATEGORY_ID: ${{ secrets.CATEGORY_ID_SUPPLEMENT }}
+          OUT_FILE: asins_bcaa.json
+
+      - name: Import BCAA ASINs to Supabase
+        run: python scripts/import_asins_to_supabase.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          ASIN_FILE: asins_bcaa.json
+          CATEGORY: bcaa
