@@ -1,5 +1,3 @@
-// healthy-site/src/app/api/ranking/route.ts
-
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -32,7 +30,7 @@ function pickCol(cols: Set<string>, lower: string, alias: string) {
   return cols.has(lower) ? `"${lower}" AS ${alias}` : `NULL AS ${alias}`;
 }
 
-// ===== image 正規化（最終防波堤）=====
+/** imageurl 正規化（最終防波堤） */
 function normalizeImageUrl(imageurl: string | null): string | null {
   if (!imageurl) return null;
 
@@ -59,7 +57,6 @@ export async function GET(req: NextRequest) {
   try {
     const sp = new URL(req.url).searchParams;
     const type = (sp.get('type') ?? 'whey').toLowerCase();
-    const sort = (sp.get('sort') ?? 'score').toLowerCase();
     const limit = 10;
 
     let table = 'products';
@@ -68,58 +65,23 @@ export async function GET(req: NextRequest) {
     if (type === 'whey') table = 'v_rank_whey_30d';
     else if (type === 'isolate') table = 'v_rank_wpi_30d';
     else if (type === 'soy') {
-      table = 'products';
       where = `
         WHERE imageurl IS NOT NULL
-          AND (
-            title ILIKE '%ソイ%' OR
-            title ILIKE '%soy%' OR
-            title ILIKE '%SOY%' OR
-            title ILIKE '%大豆%' OR
-            title ILIKE '%植物性%'
-          )
+          AND (title ILIKE '%ソイ%' OR title ILIKE '%soy%' OR title ILIKE '%SOY%')
       `;
     } else if (type === 'bcaa') {
-      table = 'products';
       where = `
         WHERE imageurl IS NOT NULL
-          AND (
-            title ILIKE '%BCAA%' OR
-            title ILIKE '%bcaa%' OR
-            title ILIKE '%ＢＣＡＡ%'
-          )
+          AND (title ILIKE '%BCAA%' OR title ILIKE '%bcaa%' OR title ILIKE '%ＢＣＡＡ%')
       `;
     } else if (type === 'eaa') {
-      table = 'products';
       where = `
         WHERE imageurl IS NOT NULL
-          AND (
-            title ILIKE '%EAA%' OR
-            title ILIKE '%eaa%' OR
-            title ILIKE '%ＥＡＡ%'
-          )
+          AND (title ILIKE '%EAA%' OR title ILIKE '%eaa%' OR title ILIKE '%ＥＡＡ%')
       `;
     }
 
-    let order = `
-      ORDER BY
-        COALESCE(score, 0) DESC,
-        updated_at DESC
-    `;
-
-    if (sort === 'price') {
-      order = `
-        ORDER BY
-          COALESCE(buyboxprice, buyboxfallback) ASC NULLS LAST,
-          updated_at DESC
-      `;
-    } else if (sort === 'sales') {
-      order = `
-        ORDER BY
-          salesrank ASC NULLS LAST,
-          updated_at DESC
-      `;
-    }
+    const order = `ORDER BY COALESCE(score, 0) DESC, updated_at DESC`;
 
     const pool = getPool();
 
@@ -138,16 +100,12 @@ export async function GET(req: NextRequest) {
       pickCol(cols, 'brand', 'brand'),
       pickCol(cols, 'buyboxprice', 'buyboxprice'),
       pickCol(cols, 'buyboxfallback', 'buyboxfallback'),
-      pickCol(cols, 'salesrank', 'salesrank'),
-      pickCol(cols, 'droprate', 'droprate'),
-      pickCol(cols, 'droprateprev', 'droprateprev'),
       pickCol(cols, 'score', 'score'),
       pickCol(cols, 'imageurl', 'imageurl'),
     ].join(',\n');
 
     const sql = `
-      SELECT
-        ${selectParts}
+      SELECT ${selectParts}
       FROM ${table}
       ${where}
       ${order}
@@ -156,24 +114,22 @@ export async function GET(req: NextRequest) {
 
     const { rows } = await pool.query<any>(sql, [limit]);
 
-    const items = rows.map((p: any, i: number) => ({
-      rank: i + 1,
-      asin: p.asin,
-      title: p.title,
-      brand: p.brand ?? '',
-      price: p.buyboxprice
-        ? Math.round(p.buyboxprice / 100)
-        : p.buyboxfallback
-        ? Math.round(p.buyboxfallback / 100)
-        : null,
-      dropRate: p.droprate ?? 0,
-      dropRateDiff: (p.droprate ?? 0) - (p.droprateprev ?? 0),
-      score: p.score ?? 0,
-      imageUrl: normalizeImageUrl(p.imageurl),
-      affiliateUrl: `https://www.amazon.co.jp/dp/${p.asin}`,
-    }));
-
-    return NextResponse.json(items);
+    return NextResponse.json(
+      rows.map((p: any, i: number) => ({
+        rank: i + 1,
+        asin: p.asin,
+        title: p.title,
+        brand: p.brand ?? '',
+        price: p.buyboxprice
+          ? Math.round(p.buyboxprice / 100)
+          : p.buyboxfallback
+          ? Math.round(p.buyboxfallback / 100)
+          : null,
+        score: p.score ?? 0,
+        imageUrl: normalizeImageUrl(p.imageurl),
+        affiliateUrl: `https://www.amazon.co.jp/dp/${p.asin}`,
+      }))
+    );
   } catch (e) {
     console.error('❌ /api/ranking error:', e);
     return NextResponse.json([], { status: 200 });

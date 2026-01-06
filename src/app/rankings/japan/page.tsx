@@ -6,15 +6,13 @@ import Link from 'next/link';
 
 const genres = [
   { href: '/rankings/japan/protein', label: 'プロテインランキング' },
-  { href: '/rankings/japan/foods', label: 'フードランキング' },
   { href: '/rankings/japan/supplements', label: 'サプリメントランキング' },
-  { href: '/rankings/japan/others', label: 'その他ランキング' },
 ];
 
 export default function JapanRankingOverview() {
   return (
-    <main className="max-w-4xl mx-auto px-4 py-10 bg-white min-h-screen">
-      <h1 className="text-3xl font-bold text-center mb-8 text-gray-900">
+    <main className="max-w-4xl mx-auto px-4 py-10">
+      <h1 className="text-3xl font-bold text-center mb-8">
         ジャンル別ランキング
       </h1>
 
@@ -23,10 +21,7 @@ export default function JapanRankingOverview() {
           <li key={item.href}>
             <Link
               href={item.href}
-              className="flex items-center justify-center p-8 h-28 rounded-lg
-                         border border-gray-200 bg-white text-lg font-medium text-gray-900
-                         shadow-sm hover:bg-green-600 hover:text-white hover:shadow-lg
-                         transition-all duration-200"
+              className="block border rounded-lg p-6 text-center hover:bg-gray-50 transition"
             >
               {item.label}
             </Link>
