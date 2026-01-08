@@ -13,11 +13,11 @@ const tabs = [
 
 type ProductItem = {
   rank: number;
-  title: string;
   asin: string;
+  title: string;
   brand: string;
   price: number | null;
-  imageUrl: string;
+  imageUrl: string | null;
   score: number | null;
   affiliateUrl: string;
 };
@@ -25,49 +25,19 @@ type ProductItem = {
 export default function ProteinRankingPage() {
   const [activeTab, setActiveTab] =
     useState<'whey' | 'soy' | 'isolate'>('whey');
-  const [wheyItems, setWheyItems] = useState<ProductItem[]>([]);
-  const [soyItems, setSoyItems] = useState<ProductItem[]>([]);
-  const [isolateItems, setIsolateItems] = useState<ProductItem[]>([]);
+  const [items, setItems] = useState<ProductItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
-
-    Promise.all([
-      fetch(
-        new URL('/api/ranking?type=whey&sort=score', window.location.origin),
-        { cache: 'no-store' }
-      ).then(r => r.json()),
-
-      fetch(
-        new URL('/api/ranking?type=soy&sort=score', window.location.origin),
-        { cache: 'no-store' }
-      ).then(r => r.json()),
-
-      fetch(
-        new URL('/api/ranking?type=isolate&sort=score', window.location.origin),
-        { cache: 'no-store' }
-      ).then(r => r.json()),
-    ])
-      .then(([whey, soy, isolate]) => {
-        setWheyItems(Array.isArray(whey) ? whey : []);
-        setSoyItems(Array.isArray(soy) ? soy : []);
-        setIsolateItems(Array.isArray(isolate) ? isolate : []);
-      })
-      .catch(() => {
-        setWheyItems([]);
-        setSoyItems([]);
-        setIsolateItems([]);
-      })
+    fetch(
+      new URL(`/api/ranking?type=${activeTab}&sort=score`, window.location.origin),
+      { cache: 'no-store' }
+    )
+      .then(r => r.json())
+      .then(data => setItems(Array.isArray(data) ? data : []))
       .finally(() => setLoading(false));
-  }, []);
-
-  const items =
-    activeTab === 'soy'
-      ? soyItems
-      : activeTab === 'isolate'
-      ? isolateItems
-      : wheyItems;
+  }, [activeTab]);
 
   return (
     <main className="max-w-4xl mx-auto px-4 py-8">
@@ -79,13 +49,11 @@ export default function ProteinRankingPage() {
         {tabs.map(tab => (
           <button
             key={tab.id}
-            onClick={() =>
-              setActiveTab(tab.id as 'whey' | 'soy' | 'isolate')
-            }
-            className={`px-4 py-2 rounded-full border font-medium transition ${
+            onClick={() => setActiveTab(tab.id as any)}
+            className={`px-4 py-2 rounded-full border ${
               activeTab === tab.id
-                ? 'bg-green-600 text-white border-green-600'
-                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
+                ? 'bg-green-600 text-white'
+                : 'bg-white text-gray-700'
             }`}
           >
             {tab.label}
@@ -93,10 +61,7 @@ export default function ProteinRankingPage() {
         ))}
       </div>
 
-      {loading && (
-        <p className="text-center text-gray-400">ランキング読み込み中…</p>
-      )}
-
+      {loading && <p className="text-center text-gray-400">読み込み中…</p>}
       {!loading && items.length === 0 && (
         <p className="text-center text-gray-400">データがありません</p>
       )}
@@ -105,14 +70,22 @@ export default function ProteinRankingPage() {
         {items.map(item => (
           <div
             key={item.asin}
-            className="p-4 border rounded-lg flex gap-4"
+            className={`p-4 rounded-xl shadow-sm flex gap-4 ${
+              item.rank === 1
+                ? 'border-2 border-yellow-400'
+                : item.rank === 2
+                ? 'border-2 border-gray-400'
+                : item.rank === 3
+                ? 'border-2 border-orange-400'
+                : 'border border-gray-200'
+            }`}
           >
             <Image
               src={item.imageUrl || '/no-image.png'}
               alt={item.title}
               width={96}
               height={96}
-              className="object-contain"
+              className="object-contain rounded"
               unoptimized
             />
 
@@ -128,6 +101,15 @@ export default function ProteinRankingPage() {
                   : '―'}
               </p>
               <p>スコア: {item.score ?? '―'}</p>
+
+              <a
+                href={item.affiliateUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block mt-2 text-sm text-green-700 underline"
+              >
+                Amazonで見る
+              </a>
             </div>
           </div>
         ))}
