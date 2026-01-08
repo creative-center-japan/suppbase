@@ -1,45 +1,24 @@
-# scripts/fetch_product_details_from_supabase.py
-
 import os
 import time
 import requests
 from supabase import create_client
 
-# ===== ENV =====
 KEEPA_API_KEY = os.environ["KEEPA_API_KEY"]
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE"]
-MAX_PRODUCTS = int(os.environ.get("MAX_PRODUCTS", "40"))
 
-# ===== CONST =====
-DOMAIN_ID = 5  # Amazon.co.jp
+DOMAIN_ID = 5
 API_URL = "https://api.keepa.com/product"
-IMG_HOST = "https://images-na.ssl-images-amazon.com"
+MAX_PRODUCTS = 200  # ← 一時的に増やす（重要）
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ===== image URL 正規化 =====
-def normalize_image_url(images_csv):
-    if not images_csv:
-        return None
-
-    first = images_csv.split(",")[0].strip()
-    if not first:
-        return None
-
-    if first.startswith("http://") or first.startswith("https://"):
-        return first
-
-    if first.startswith("/images/"):
-        return f"{IMG_HOST}{first}"
-
-    return f"{IMG_HOST}/images/I/{first}"
-
-# ===== ASIN 取得（recent-first）=====
+# 直近ASINを取得
 res = (
     supabase.table("tracked_asins")
     .select("asin")
-    .order("last_seen_at", desc=True)  # ★重要
+    .eq("is_active", True)
+    .order("last_seen_at", desc=True)
     .limit(MAX_PRODUCTS)
     .execute()
 )
@@ -52,7 +31,6 @@ if not asins:
 
 rows = []
 
-# ===== Keepa fetch =====
 for i in range(0, len(asins), 20):
     batch = asins[i:i + 20]
 
@@ -63,38 +41,43 @@ for i in range(0, len(asins), 20):
             "domain": DOMAIN_ID,
             "asin": ",".join(batch),
             "stats": 180,
-            "update": -1,
+            "update": 1,   # ★ ここが最重要
             "history": 0,
         },
         timeout=60,
     )
-
-    if r.status_code == 429:
-        print("[429] rate limited → skip batch")
-        continue
 
     r.raise_for_status()
     products = r.json().get("products", [])
 
     for p in products:
         stats = p.get("stats") or {}
-        price = stats.get("buyBoxPrice")
+
+        buyboxprice = stats.get("buyBoxPrice")
+        rating = stats.get("rating") or p.get("rating")
+        reviewcount = stats.get("reviewCount") or p.get("reviewCount")
+
+        # BuyBoxが無い商品は除外（ランキング母集団にしない）
+        if not buyboxprice or buyboxprice <= 0:
+            continue
+
+        score = int((rating or 0) * 20 + min(reviewcount or 0, 500))
 
         rows.append({
             "asin": p.get("asin"),
             "title": p.get("title"),
             "brand": p.get("brand"),
-            "imageurl": normalize_image_url(p.get("imagesCSV")),
-            "buyboxprice": price,
-            "rating": p.get("rating"),
-            "reviewcount": p.get("reviewCount"),
+            "buyboxprice": buyboxprice,
+            "rating": rating,
+            "reviewcount": reviewcount,
+            "score": score,
         })
 
     time.sleep(2)
 
 if not rows:
-    print("[SKIP] no product rows")
+    print("[WARN] no valid BuyBox products")
     raise SystemExit(0)
 
 supabase.table("products").upsert(rows).execute()
-print(f"[OK] upserted {len(rows)} products")
+print(f"[OK] upserted {len(rows)} products with BuyBox")
