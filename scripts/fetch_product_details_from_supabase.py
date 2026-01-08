@@ -11,11 +11,11 @@ SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE"]
 
 # ===== Keepa / Plan20 設定 =====
-DOMAIN_ID = 5
+DOMAIN_ID = 5  # Amazon.co.jp
 API_URL = "https://api.keepa.com/product"
 
 BATCH_SIZE = 10          # 10 ASIN / request
-SLEEP_SEC = 30           # 30秒 → 20 tokens / 分
+SLEEP_SEC = 30           # 30秒 = 20 tokens / 分
 MAX_ASINS_PER_RUN = 100  # 1回の実行上限
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -53,7 +53,7 @@ for i in range(0, len(asins), BATCH_SIZE):
             "domain": DOMAIN_ID,
             "asin": ",".join(batch),
             "stats": 180,
-            "update": 1,   # ★ 強制更新（Plan20なので件数制限で安全）
+            "update": 1,   # 強制更新（件数制限しているので安全）
             "history": 0,
         },
         timeout=60,
@@ -71,14 +71,17 @@ for i in range(0, len(asins), BATCH_SIZE):
         stats = p.get("stats") or {}
 
         buyboxprice = stats.get("buyBoxPrice")
-        rating = stats.get("rating") or p.get("rating")
-        reviewcount = stats.get("reviewCount") or p.get("reviewCount")
+        rating = stats.get("rating")
+        reviewcount = stats.get("reviewCount")
 
-        # BuyBox未確定は除外（ランキング母集団に入れない）
+        # ★ ここが今回の追加ポイント ★
+        salesrank = p.get("salesRank")
+        if not isinstance(salesrank, int):
+            salesrank = None
+
+        # BuyBox未確定は保存しない（既存方針）
         if not buyboxprice or buyboxprice <= 0:
             continue
-
-        score = int((rating or 0) * 20 + min(reviewcount or 0, 500))
 
         rows.append({
             "asin": p.get("asin"),
@@ -87,7 +90,7 @@ for i in range(0, len(asins), BATCH_SIZE):
             "buyboxprice": buyboxprice,
             "rating": rating,
             "reviewcount": reviewcount,
-            "score": score,
+            "salesrank": salesrank,   # ★ 保存
             "updated_at": now,
         })
 
@@ -95,6 +98,6 @@ for i in range(0, len(asins), BATCH_SIZE):
 
 if rows:
     supabase.table("products").upsert(rows).execute()
-    print(f"[OK] upserted {len(rows)} products")
+    print(f"[OK] upserted {len(rows)} products (with salesRank)")
 else:
     print("[WARN] no valid BuyBox products")

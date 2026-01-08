@@ -47,7 +47,7 @@ function pickCol(cols: Set<string>, lower: string, alias: string) {
   return cols.has(lower) ? `"${lower}" AS ${alias}` : `NULL AS ${alias}`;
 }
 
-// ===== imageurl 正規化（最終防波堤）=====
+// ===== imageurl 正規化 =====
 function normalizeImageUrl(imageurl: string | null): string | null {
   if (!imageurl) return null;
 
@@ -79,13 +79,12 @@ export async function GET(req: NextRequest) {
     const limit = 10;
 
     /**
-     * ★ ここが今回の本丸 ★
-     * ランキングの参照先を v_suppbase_score_phase1 に統一
+     * ★ 修正点 ★
+     * let → const（再代入していないため）
      */
-    let table = 'v_suppbase_score_phase1';
+    const table = 'v_suppbase_score_phase1';
     let where = '';
 
-    // type ごとの差分は WHERE で吸収
     if (type === 'soy') {
       where = `
         WHERE (
@@ -103,12 +102,8 @@ export async function GET(req: NextRequest) {
           title ILIKE '%アイソレート%'
         )
       `;
-    } else {
-      // whey（デフォルト）
-      where = '';
     }
 
-    // ===== ORDER =====
     let order = `
       ORDER BY
         COALESCE(score, 0) DESC,
@@ -132,7 +127,6 @@ export async function GET(req: NextRequest) {
 
     const pool = getPool();
 
-    // ===== カラム存在チェック =====
     const meta = await pool.query<{ column_name: string }>(`
       SELECT column_name
       FROM information_schema.columns
