@@ -1,25 +1,35 @@
 import os
 import time
+import random
 import requests
+from datetime import datetime, timezone
 from supabase import create_client
 
+# ===== ENV =====
 KEEPA_API_KEY = os.environ["KEEPA_API_KEY"]
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE"]
 
+# ===== Keepa / Plan20 設定 =====
 DOMAIN_ID = 5
 API_URL = "https://api.keepa.com/product"
-MAX_PRODUCTS = 200  # ← 一時的に増やす（重要）
+
+BATCH_SIZE = 10          # 10 ASIN / request
+SLEEP_SEC = 30           # 30秒 → 20 tokens / 分
+MAX_ASINS_PER_RUN = 100  # 1回の実行上限
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# 直近ASINを取得
+def safe_sleep(sec):
+    time.sleep(sec + random.uniform(0, 3))
+
+# ===== 対象 ASIN 取得 =====
 res = (
     supabase.table("tracked_asins")
     .select("asin")
     .eq("is_active", True)
     .order("last_seen_at", desc=True)
-    .limit(MAX_PRODUCTS)
+    .limit(MAX_ASINS_PER_RUN)
     .execute()
 )
 
@@ -30,9 +40,11 @@ if not asins:
     raise SystemExit(0)
 
 rows = []
+now = datetime.now(timezone.utc).isoformat()
 
-for i in range(0, len(asins), 20):
-    batch = asins[i:i + 20]
+# ===== Keepa fetch =====
+for i in range(0, len(asins), BATCH_SIZE):
+    batch = asins[i:i + BATCH_SIZE]
 
     r = requests.get(
         API_URL,
@@ -41,11 +53,16 @@ for i in range(0, len(asins), 20):
             "domain": DOMAIN_ID,
             "asin": ",".join(batch),
             "stats": 180,
-            "update": 1,   # ★ ここが最重要
+            "update": 1,   # ★ 強制更新（Plan20なので件数制限で安全）
             "history": 0,
         },
         timeout=60,
     )
+
+    if r.status_code == 429:
+        print("[429] rate limited → wait 60s")
+        safe_sleep(60)
+        continue
 
     r.raise_for_status()
     products = r.json().get("products", [])
@@ -57,7 +74,7 @@ for i in range(0, len(asins), 20):
         rating = stats.get("rating") or p.get("rating")
         reviewcount = stats.get("reviewCount") or p.get("reviewCount")
 
-        # BuyBoxが無い商品は除外（ランキング母集団にしない）
+        # BuyBox未確定は除外（ランキング母集団に入れない）
         if not buyboxprice or buyboxprice <= 0:
             continue
 
@@ -71,13 +88,13 @@ for i in range(0, len(asins), 20):
             "rating": rating,
             "reviewcount": reviewcount,
             "score": score,
+            "updated_at": now,
         })
 
-    time.sleep(2)
+    safe_sleep(SLEEP_SEC)
 
-if not rows:
+if rows:
+    supabase.table("products").upsert(rows).execute()
+    print(f"[OK] upserted {len(rows)} products")
+else:
     print("[WARN] no valid BuyBox products")
-    raise SystemExit(0)
-
-supabase.table("products").upsert(rows).execute()
-print(f"[OK] upserted {len(rows)} products with BuyBox")
