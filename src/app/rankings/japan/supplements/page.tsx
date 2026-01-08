@@ -17,9 +17,7 @@ export default function SupplementRankingPage() {
       { cache: 'no-store' }
     )
       .then(res => res.json())
-      .then(data => {
-        setItems(Array.isArray(data) ? data : []);
-      })
+      .then(data => setItems(Array.isArray(data) ? data : []))
       .catch(() => setItems([]))
       .finally(() => setLoading(false));
   }, []);
@@ -30,7 +28,6 @@ export default function SupplementRankingPage() {
         サプリメント ランキング
       </h1>
 
-      {/* 共通ランキング表示 */}
       <RankingSection items={items} loading={loading} />
     </main>
   );

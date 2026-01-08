@@ -1,120 +1,121 @@
 // healthy-site\src\components\RankingSection.tsx
 
-'use client';
+export const runtime = 'nodejs';
 
-import Image from 'next/image';
+import { NextRequest, NextResponse } from 'next/server';
+import { Pool } from 'pg';
 
-export type RankingItem = {
-  rank: number;
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
+type Row = {
   asin: string;
   title: string;
-  brand: string;
-  price: number | null;
+  brand: string | null;
+  imageurl: string | null;
+  buyboxprice: number | null; // Keepa生値
+  salesrank: number | null;
+  rating: number | null;
+  reviewcount: number | null;
   score: number | null;
-  rating?: number | null;
-  reviewCount?: number | null;
-  imageUrl: string | null;
-  affiliateUrl: string;
+  category: string | null;
 };
 
-export default function RankingSection({
-  items,
-  loading,
-}: {
-  items: RankingItem[];
-  loading?: boolean;
-}) {
-  if (loading) {
-    return (
-      <p className="text-center text-gray-400 py-8">
-        ランキング読み込み中…
-      </p>
-    );
+let _pool: Pool | null = null;
+
+function getPool() {
+  if (_pool) return _pool;
+  _pool = new Pool({
+    connectionString: process.env.DATABASE_URL!,
+    ssl: { rejectUnauthorized: false },
+  });
+  return _pool;
+}
+
+function normalizeImageUrl(imageurl: string | null): string | null {
+  if (!imageurl) return null;
+  if (imageurl.startsWith('http')) return imageurl;
+  return `https://images-na.ssl-images-amazon.com/images/I/${imageurl}`;
+}
+
+export async function GET(req: NextRequest) {
+  try {
+    const sp = new URL(req.url).searchParams;
+    const type = (sp.get('type') ?? 'whey').toLowerCase();
+    const sort = (sp.get('sort') ?? 'score').toLowerCase();
+    const limit = 10;
+
+    const table = 'v_suppbase_score_phase1';
+    let where = '';
+
+    // ★ 実データに合わせた分類
+    if (type === 'whey') {
+      where = `WHERE category IN ('whey','protein')`;
+    } else if (type === 'soy') {
+      where = `WHERE category = 'protein' AND title ILIKE '%ソイ%'`;
+    } else if (type === 'isolate') {
+      // isolate = whey のサブ扱い（暫定）
+      where = `WHERE category IN ('whey','protein')`;
+    } else if (type === 'bcaa') {
+      where = `WHERE category = 'bcaa'`;
+    }
+
+    let order = `
+      ORDER BY
+        COALESCE(score,0) DESC,
+        calculated_at DESC
+    `;
+
+    if (sort === 'price') {
+      order = `
+        ORDER BY
+          buyboxprice ASC NULLS LAST,
+          calculated_at DESC
+      `;
+    } else if (sort === 'sales') {
+      order = `
+        ORDER BY
+          salesrank ASC NULLS LAST,
+          calculated_at DESC
+      `;
+    }
+
+    const pool = getPool();
+    const sql = `
+      SELECT
+        asin,
+        title,
+        brand,
+        imageurl,
+        buyboxprice,
+        salesrank,
+        rating,
+        reviewcount,
+        score,
+        category
+      FROM ${table}
+      ${where}
+      ${order}
+      LIMIT $1
+    `;
+
+    const { rows } = await pool.query<Row>(sql, [limit]);
+
+    const items = rows.map((p, i) => ({
+      rank: i + 1,
+      asin: p.asin,
+      title: p.title,
+      brand: p.brand ?? '',
+      price: p.buyboxprice != null ? Math.round(p.buyboxprice / 100) : null,
+      score: p.score ?? 0,
+      rating: p.rating,
+      reviewCount: p.reviewcount,
+      imageUrl: normalizeImageUrl(p.imageurl),
+      affiliateUrl: `https://www.amazon.co.jp/dp/${p.asin}`,
+    }));
+
+    return NextResponse.json(items);
+  } catch (e) {
+    console.error('❌ /api/ranking error:', e);
+    return NextResponse.json([], { status: 200 });
   }
-
-  if (!items.length) {
-    return (
-      <p className="text-center text-gray-400 py-8">
-        データがありません
-      </p>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      {items.map(item => (
-        <div
-          key={item.asin}
-          className={`p-4 rounded-xl shadow-sm hover:shadow-md transition flex gap-4 ${
-            item.rank === 1
-              ? 'border-2 border-yellow-400'
-              : item.rank === 2
-              ? 'border-2 border-gray-400'
-              : item.rank === 3
-              ? 'border-2 border-orange-400'
-              : 'border border-gray-200'
-          }`}
-        >
-          {/* 商品画像 */}
-          <Image
-            src={
-              item.imageUrl && item.imageUrl.startsWith('http')
-                ? item.imageUrl
-                : '/no-image.png'
-            }
-            alt={item.title}
-            width={96}
-            height={96}
-            className="object-contain rounded"
-            unoptimized
-          />
-
-          {/* 右側情報 */}
-          <div className="flex-1">
-            <h3 className="text-lg font-semibold">
-              #{item.rank} {item.title}
-            </h3>
-
-            <p className="text-sm text-gray-600">{item.brand}</p>
-
-            {/* 価格・スコア */}
-            <div className="flex items-center gap-4 mt-2">
-              <span className="text-xl font-bold text-gray-900">
-                {item.price != null
-                  ? `¥${item.price.toLocaleString()}`
-                  : '―'}
-              </span>
-
-              <span className="px-2 py-0.5 rounded-full text-sm bg-gray-100 text-gray-700">
-                スコア {item.score ?? '―'}
-              </span>
-            </div>
-
-            {/* レビュー */}
-            {item.rating != null && (
-              <div className="flex items-center gap-1 text-sm text-yellow-500 mt-1">
-                {'★'.repeat(Math.floor(item.rating))}
-                <span className="text-gray-600 ml-1">
-                  ({item.reviewCount ?? 0})
-                </span>
-              </div>
-            )}
-
-            {/* Amazonリンク */}
-            <a
-              href={item.affiliateUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center justify-center
-                         rounded-md bg-green-600 px-4 py-2 mt-3
-                         text-white text-sm font-semibold
-                         hover:bg-green-700 transition"
-            >
-              Amazonで見る
-            </a>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
 }

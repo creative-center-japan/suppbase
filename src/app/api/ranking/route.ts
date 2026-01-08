@@ -11,10 +11,12 @@ type Row = {
   asin: string;
   title: string;
   brand: string | null;
-  buyboxprice: number | null; // ★ 円
-  salesrank: number | null;
-  score: number | null;
   imageurl: string | null;
+  buyboxprice: number | null; // Keepa生値
+  salesrank: number | null;
+  rating: number | null;
+  reviewcount: number | null;
+  score: number | null;
   category: string | null;
 };
 
@@ -45,15 +47,16 @@ export async function GET(req: NextRequest) {
     const table = 'v_suppbase_score_phase1';
     let where = '';
 
-    // ★ category 実値に合わせて柔軟に
+    // ★ 実データに合わせた分類
     if (type === 'whey') {
-      where = `WHERE category ILIKE '%whey%'`;
+      where = `WHERE category IN ('whey','protein')`;
     } else if (type === 'soy') {
-      where = `WHERE category ILIKE '%soy%'`;
+      where = `WHERE category = 'protein' AND title ILIKE '%ソイ%'`;
     } else if (type === 'isolate') {
-      where = `WHERE category ILIKE '%wpi%' OR category ILIKE '%isolate%'`;
+      // isolate = whey のサブ扱い（暫定）
+      where = `WHERE category IN ('whey','protein')`;
     } else if (type === 'bcaa') {
-      where = `WHERE category ILIKE '%bcaa%'`;
+      where = `WHERE category = 'bcaa'`;
     }
 
     let order = `
@@ -85,6 +88,8 @@ export async function GET(req: NextRequest) {
         imageurl,
         buyboxprice,
         salesrank,
+        rating,
+        reviewcount,
         score,
         category
       FROM ${table}
@@ -100,8 +105,10 @@ export async function GET(req: NextRequest) {
       asin: p.asin,
       title: p.title,
       brand: p.brand ?? '',
-      price: p.buyboxprice,            // ★ ÷100しない
+      price: p.buyboxprice != null ? Math.round(p.buyboxprice / 100) : null,
       score: p.score ?? 0,
+      rating: p.rating,
+      reviewCount: p.reviewcount,
       imageUrl: normalizeImageUrl(p.imageurl),
       affiliateUrl: `https://www.amazon.co.jp/dp/${p.asin}`,
     }));

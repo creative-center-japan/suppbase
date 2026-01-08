@@ -21,16 +21,11 @@ export default function ProteinRankingPage() {
     setLoading(true);
 
     fetch(
-      new URL(
-        `/api/ranking?type=${activeTab}&sort=score`,
-        window.location.origin
-      ),
+      new URL(`/api/ranking?type=${activeTab}&sort=score`, window.location.origin),
       { cache: 'no-store' }
     )
       .then(res => res.json())
-      .then(data => {
-        setItems(Array.isArray(data) ? data : []);
-      })
+      .then(data => setItems(Array.isArray(data) ? data : []))
       .catch(() => setItems([]))
       .finally(() => setLoading(false));
   }, [activeTab]);
@@ -41,14 +36,11 @@ export default function ProteinRankingPage() {
         プロテイン ランキング
       </h1>
 
-      {/* タブ切り替え */}
       <div className="flex justify-center mb-6 gap-2">
         {tabs.map(tab => (
           <button
             key={tab.id}
-            onClick={() =>
-              setActiveTab(tab.id as 'whey' | 'soy' | 'isolate')
-            }
+            onClick={() => setActiveTab(tab.id as any)}
             className={`px-4 py-2 rounded-full border font-medium transition ${
               activeTab === tab.id
                 ? 'bg-green-600 text-white border-green-600'
@@ -60,7 +52,6 @@ export default function ProteinRankingPage() {
         ))}
       </div>
 
-      {/* 共通ランキング表示 */}
       <RankingSection items={items} loading={loading} />
     </main>
   );
