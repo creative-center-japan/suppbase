@@ -11,112 +11,86 @@ type Row = {
   asin: string;
   title: string;
   brand: string | null;
-  buyboxprice: number | null;
-  buyboxfallback: number | null;
-  score: number | null;
   imageurl: string | null;
+  buyboxprice: number | null; // Keepa生値（1/100円）
+  salesrank: number | null;
+  rating: number | null;
+  reviewcount: number | null;
+  score: number | null;
+  category: string | null;
 };
 
 let _pool: Pool | null = null;
 
-function normalizeDbUrl(raw: string) {
-  const u = new URL(raw);
-  if (!u.searchParams.has('sslmode')) u.searchParams.set('sslmode', 'require');
-  if (!u.searchParams.has('target_session_attrs')) {
-    u.searchParams.set('target_session_attrs', 'read-write');
-  }
-  return u;
-}
-
 function getPool() {
   if (_pool) return _pool;
-  const url = normalizeDbUrl(process.env.DATABASE_URL!);
   _pool = new Pool({
-    connectionString: url.toString(),
+    connectionString: process.env.DATABASE_URL!,
     ssl: { rejectUnauthorized: false },
   });
   return _pool;
 }
 
-function pickCol(cols: Set<string>, lower: string, alias: string) {
-  return cols.has(lower) ? `"${lower}" AS ${alias}` : `NULL AS ${alias}`;
-}
-
-/** imageurl 正規化（最終防波堤） */
 function normalizeImageUrl(imageurl: string | null): string | null {
   if (!imageurl) return null;
-
-  if (imageurl.startsWith('https://images-na.ssl-images-amazon.com/images/I/')) {
-    return imageurl;
-  }
-
-  if (imageurl.startsWith('https://images-na.ssl-images-amazon.com')) {
-    const filename = imageurl.replace(
-      /^https:\/\/images-na\.ssl-images-amazon\.com\/?/,
-      ''
-    );
-    return `https://images-na.ssl-images-amazon.com/images/I/${filename}`;
-  }
-
-  if (!imageurl.startsWith('http')) {
-    return `https://images-na.ssl-images-amazon.com/images/I/${imageurl}`;
-  }
-
-  return null;
+  if (imageurl.startsWith('http')) return imageurl;
+  return `https://images-na.ssl-images-amazon.com/images/I/${imageurl}`;
 }
 
 export async function GET(req: NextRequest) {
   try {
     const sp = new URL(req.url).searchParams;
     const type = (sp.get('type') ?? 'whey').toLowerCase();
+    const sort = (sp.get('sort') ?? 'score').toLowerCase();
     const limit = 10;
 
-    let table = 'products';
+    const table = 'v_suppbase_score_phase1';
     let where = '';
 
-    if (type === 'whey') table = 'v_rank_whey_30d';
-    else if (type === 'isolate') table = 'v_rank_wpi_30d';
-    else if (type === 'soy') {
-      where = `
-        WHERE imageurl IS NOT NULL
-          AND (title ILIKE '%ソイ%' OR title ILIKE '%soy%' OR title ILIKE '%SOY%')
-      `;
+    // category 実値に合わせて曖昧一致
+    if (type === 'whey') {
+      where = `WHERE category ILIKE '%whey%'`;
+    } else if (type === 'soy') {
+      where = `WHERE category ILIKE '%soy%'`;
+    } else if (type === 'isolate') {
+      where = `WHERE category ILIKE '%isolate%' OR category ILIKE '%wpi%'`;
     } else if (type === 'bcaa') {
-      where = `
-        WHERE imageurl IS NOT NULL
-          AND (title ILIKE '%BCAA%' OR title ILIKE '%bcaa%' OR title ILIKE '%ＢＣＡＡ%')
+      where = `WHERE category ILIKE '%bcaa%'`;
+    }
+
+    let order = `
+      ORDER BY
+        COALESCE(score,0) DESC,
+        calculated_at DESC
+    `;
+
+    if (sort === 'price') {
+      order = `
+        ORDER BY
+          buyboxprice ASC NULLS LAST,
+          calculated_at DESC
       `;
-    } else if (type === 'eaa') {
-      where = `
-        WHERE imageurl IS NOT NULL
-          AND (title ILIKE '%EAA%' OR title ILIKE '%eaa%' OR title ILIKE '%ＥＡＡ%')
+    } else if (sort === 'sales') {
+      order = `
+        ORDER BY
+          salesrank ASC NULLS LAST,
+          calculated_at DESC
       `;
     }
 
-    const order = `ORDER BY COALESCE(score, 0) DESC, updated_at DESC`;
     const pool = getPool();
-
-    const meta = await pool.query<{ column_name: string }>(`
-      SELECT column_name
-      FROM information_schema.columns
-      WHERE table_schema='public'
-        AND table_name='${table}'
-    `);
-
-    const cols = new Set(meta.rows.map(r => r.column_name));
-
-    const selectParts = [
-      pickCol(cols, 'asin', 'asin'),
-      pickCol(cols, 'title', 'title'),
-      pickCol(cols, 'brand', 'brand'),
-      pickCol(cols, 'buyboxprice', 'buyboxprice'),
-      pickCol(cols, 'buyboxfallback', 'buyboxfallback'),
-      pickCol(cols, 'score', 'score'),
-      pickCol(cols, 'imageurl', 'imageurl'),
-    ].join(',\n');
-
     const sql = `
-      SELECT ${selectParts}
+      SELECT
+        asin,
+        title,
+        brand,
+        imageurl,
+        buyboxprice,
+        salesrank,
+        rating,
+        reviewcount,
+        score,
+        category
       FROM ${table}
       ${where}
       ${order}
@@ -125,22 +99,25 @@ export async function GET(req: NextRequest) {
 
     const { rows } = await pool.query<Row>(sql, [limit]);
 
-    return NextResponse.json(
-      rows.map((p, i) => ({
+    const items = rows.map((p, i) => {
+      const price =
+        p.buyboxprice != null ? Math.round(p.buyboxprice / 100) : null;
+
+      return {
         rank: i + 1,
         asin: p.asin,
         title: p.title,
         brand: p.brand ?? '',
-        price: p.buyboxprice
-          ? Math.round(p.buyboxprice / 100)
-          : p.buyboxfallback
-          ? Math.round(p.buyboxfallback / 100)
-          : null,
+        price,
         score: p.score ?? 0,
+        rating: p.rating,
+        reviewCount: p.reviewcount,
         imageUrl: normalizeImageUrl(p.imageurl),
         affiliateUrl: `https://www.amazon.co.jp/dp/${p.asin}`,
-      }))
-    );
+      };
+    });
+
+    return NextResponse.json(items);
   } catch (e) {
     console.error('❌ /api/ranking error:', e);
     return NextResponse.json([], { status: 200 });

@@ -3,7 +3,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Image from 'next/image';
+import RankingSection, { RankingItem } from '@/components/RankingSection';
 
 const tabs = [
   { id: 'whey', label: 'ホエイ' },
@@ -11,31 +11,27 @@ const tabs = [
   { id: 'isolate', label: 'アイソレート（WPI）' },
 ];
 
-type ProductItem = {
-  rank: number;
-  asin: string;
-  title: string;
-  brand: string;
-  price: number | null;
-  imageUrl: string | null;
-  score: number | null;
-  affiliateUrl: string;
-};
-
 export default function ProteinRankingPage() {
   const [activeTab, setActiveTab] =
     useState<'whey' | 'soy' | 'isolate'>('whey');
-  const [items, setItems] = useState<ProductItem[]>([]);
+  const [items, setItems] = useState<RankingItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
+
     fetch(
-      new URL(`/api/ranking?type=${activeTab}&sort=score`, window.location.origin),
+      new URL(
+        `/api/ranking?type=${activeTab}&sort=score`,
+        window.location.origin
+      ),
       { cache: 'no-store' }
     )
-      .then(r => r.json())
-      .then(data => setItems(Array.isArray(data) ? data : []))
+      .then(res => res.json())
+      .then(data => {
+        setItems(Array.isArray(data) ? data : []);
+      })
+      .catch(() => setItems([]))
       .finally(() => setLoading(false));
   }, [activeTab]);
 
@@ -45,15 +41,18 @@ export default function ProteinRankingPage() {
         プロテイン ランキング
       </h1>
 
+      {/* タブ切り替え */}
       <div className="flex justify-center mb-6 gap-2">
         {tabs.map(tab => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
-            className={`px-4 py-2 rounded-full border ${
+            onClick={() =>
+              setActiveTab(tab.id as 'whey' | 'soy' | 'isolate')
+            }
+            className={`px-4 py-2 rounded-full border font-medium transition ${
               activeTab === tab.id
-                ? 'bg-green-600 text-white'
-                : 'bg-white text-gray-700'
+                ? 'bg-green-600 text-white border-green-600'
+                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
             }`}
           >
             {tab.label}
@@ -61,59 +60,8 @@ export default function ProteinRankingPage() {
         ))}
       </div>
 
-      {loading && <p className="text-center text-gray-400">読み込み中…</p>}
-      {!loading && items.length === 0 && (
-        <p className="text-center text-gray-400">データがありません</p>
-      )}
-
-      <div className="space-y-4">
-        {items.map(item => (
-          <div
-            key={item.asin}
-            className={`p-4 rounded-xl shadow-sm flex gap-4 ${
-              item.rank === 1
-                ? 'border-2 border-yellow-400'
-                : item.rank === 2
-                ? 'border-2 border-gray-400'
-                : item.rank === 3
-                ? 'border-2 border-orange-400'
-                : 'border border-gray-200'
-            }`}
-          >
-            <Image
-              src={item.imageUrl || '/no-image.png'}
-              alt={item.title}
-              width={96}
-              height={96}
-              className="object-contain rounded"
-              unoptimized
-            />
-
-            <div className="flex-1">
-              <h3 className="font-semibold">
-                #{item.rank} {item.title}
-              </h3>
-              <p className="text-sm text-gray-600">{item.brand}</p>
-              <p className="mt-2">
-                価格:{' '}
-                {item.price != null
-                  ? `${item.price.toLocaleString()}円`
-                  : '―'}
-              </p>
-              <p>スコア: {item.score ?? '―'}</p>
-
-              <a
-                href={item.affiliateUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-block mt-2 text-sm text-green-700 underline"
-              >
-                Amazonで見る
-              </a>
-            </div>
-          </div>
-        ))}
-      </div>
+      {/* 共通ランキング表示 */}
+      <RankingSection items={items} loading={loading} />
     </main>
   );
 }
