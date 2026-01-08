@@ -18,6 +18,7 @@ type Row = {
   droprateprev: number | null;
   score: number | null;
   imageurl: string | null;
+  category: string | null;
 };
 
 let _pool: Pool | null = null;
@@ -79,31 +80,21 @@ export async function GET(req: NextRequest) {
     const limit = 10;
 
     /**
-     * ★ 修正点 ★
-     * let → const（再代入していないため）
+     * ランキングの参照先は SuppBase スコア View に統一
      */
     const table = 'v_suppbase_score_phase1';
     let where = '';
 
-    if (type === 'soy') {
-      where = `
-        WHERE (
-          title ILIKE '%ソイ%' OR
-          title ILIKE '%soy%' OR
-          title ILIKE '%SOY%' OR
-          title ILIKE '%大豆%' OR
-          title ILIKE '%植物性%'
-        )
-      `;
+    // ===== category ベースで絞る（重要）=====
+    if (type === 'whey') {
+      where = `WHERE category = 'whey'`;
+    } else if (type === 'soy') {
+      where = `WHERE category = 'soy'`;
     } else if (type === 'isolate') {
-      where = `
-        WHERE (
-          title ILIKE '%WPI%' OR
-          title ILIKE '%アイソレート%'
-        )
-      `;
+      where = `WHERE category IN ('wpi', 'isolate')`;
     }
 
+    // ===== ORDER =====
     let order = `
       ORDER BY
         COALESCE(score, 0) DESC,
@@ -127,6 +118,7 @@ export async function GET(req: NextRequest) {
 
     const pool = getPool();
 
+    // ===== カラム存在チェック =====
     const meta = await pool.query<{ column_name: string }>(`
       SELECT column_name
       FROM information_schema.columns
@@ -146,6 +138,7 @@ export async function GET(req: NextRequest) {
       pickCol(cols, 'droprateprev', 'droprateprev'),
       pickCol(cols, 'score', 'score'),
       pickCol(cols, 'imageurl', 'imageurl'),
+      pickCol(cols, 'category', 'category'),
     ].join(',\n');
 
     const sql = `
