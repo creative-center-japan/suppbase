@@ -3,7 +3,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import Image from 'next/image';
 
 const tabs = [
@@ -39,10 +38,12 @@ export default function ProteinRankingPage() {
         new URL('/api/ranking?type=whey&sort=score', window.location.origin),
         { cache: 'no-store' }
       ).then(r => r.json()),
+
       fetch(
         new URL('/api/ranking?type=soy&sort=score', window.location.origin),
         { cache: 'no-store' }
       ).then(r => r.json()),
+
       fetch(
         new URL('/api/ranking?type=isolate&sort=score', window.location.origin),
         { cache: 'no-store' }
@@ -52,6 +53,11 @@ export default function ProteinRankingPage() {
         setWheyItems(Array.isArray(whey) ? whey : []);
         setSoyItems(Array.isArray(soy) ? soy : []);
         setIsolateItems(Array.isArray(isolate) ? isolate : []);
+      })
+      .catch(() => {
+        setWheyItems([]);
+        setSoyItems([]);
+        setIsolateItems([]);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -76,10 +82,10 @@ export default function ProteinRankingPage() {
             onClick={() =>
               setActiveTab(tab.id as 'whey' | 'soy' | 'isolate')
             }
-            className={`px-4 py-2 rounded-full border ${
+            className={`px-4 py-2 rounded-full border font-medium transition ${
               activeTab === tab.id
-                ? 'bg-green-600 text-white'
-                : 'bg-white text-gray-700'
+                ? 'bg-green-600 text-white border-green-600'
+                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
             }`}
           >
             {tab.label}
@@ -87,27 +93,40 @@ export default function ProteinRankingPage() {
         ))}
       </div>
 
-      {loading && <p className="text-center">読み込み中…</p>}
+      {loading && (
+        <p className="text-center text-gray-400">ランキング読み込み中…</p>
+      )}
+
       {!loading && items.length === 0 && (
-        <p className="text-center">データがありません</p>
+        <p className="text-center text-gray-400">データがありません</p>
       )}
 
       <div className="space-y-4">
         {items.map(item => (
-          <div key={item.asin} className="p-4 border rounded-lg flex gap-4">
+          <div
+            key={item.asin}
+            className="p-4 border rounded-lg flex gap-4"
+          >
             <Image
               src={item.imageUrl || '/no-image.png'}
               alt={item.title}
               width={96}
               height={96}
+              className="object-contain"
               unoptimized
             />
-            <div>
+
+            <div className="flex-1">
               <h3 className="font-semibold">
                 #{item.rank} {item.title}
               </h3>
               <p className="text-sm text-gray-600">{item.brand}</p>
-              <p>価格: {item.price ? `${item.price}円` : '―'}</p>
+              <p className="mt-2">
+                価格:{' '}
+                {item.price != null
+                  ? `${item.price.toLocaleString()}円`
+                  : '―'}
+              </p>
               <p>スコア: {item.score ?? '―'}</p>
             </div>
           </div>
