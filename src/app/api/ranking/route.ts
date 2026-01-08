@@ -28,9 +28,6 @@ function normalizeDbUrl(raw: string) {
   if (!u.searchParams.has('sslmode')) {
     u.searchParams.set('sslmode', 'require');
   }
-  if (!u.searchParams.has('target_session_attrs')) {
-    u.searchParams.set('target_session_attrs', 'read-write');
-  }
   return u;
 }
 
@@ -48,64 +45,37 @@ function pickCol(cols: Set<string>, lower: string, alias: string) {
   return cols.has(lower) ? `"${lower}" AS ${alias}` : `NULL AS ${alias}`;
 }
 
-// ===== imageurl 正規化 =====
 function normalizeImageUrl(imageurl: string | null): string | null {
   if (!imageurl) return null;
-
-  if (imageurl.startsWith('https://images-na.ssl-images-amazon.com/images/I/')) {
-    return imageurl;
-  }
-
-  if (imageurl.startsWith('https://images-na.ssl-images-amazon.com')) {
-    const filename = imageurl.replace(
-      /^https:\/\/images-na\.ssl-images-amazon\.com\/?/,
-      ''
-    );
-    return `https://images-na.ssl-images-amazon.com/images/I/${filename}`;
-  }
-
-  if (!imageurl.startsWith('http')) {
-    return `https://images-na.ssl-images-amazon.com/images/I/${imageurl}`;
-  }
-
-  return null;
+  if (imageurl.startsWith('http')) return imageurl;
+  return `https://images-na.ssl-images-amazon.com/images/I/${imageurl}`;
 }
 
 export async function GET(req: NextRequest) {
   try {
     const sp = new URL(req.url).searchParams;
-
     const type = (sp.get('type') ?? 'whey').toLowerCase();
     const sort = (sp.get('sort') ?? 'score').toLowerCase();
     const limit = 10;
 
-    /**
-     * ランキングの参照先は SuppBase スコア View に統一
-     */
     const table = 'v_suppbase_score_phase1';
     let where = '';
 
-    // ===== category ベースで絞る（重要）=====
-    if (type === 'whey') {
-      where = `WHERE category = 'whey'`;
-    } else if (type === 'soy') {
-      where = `WHERE category = 'soy'`;
-    } else if (type === 'isolate') {
-      where = `WHERE category IN ('wpi', 'isolate')`;
-    }
+    if (type === 'whey') where = `WHERE category = 'whey'`;
+    else if (type === 'soy') where = `WHERE category = 'soy'`;
+    else if (type === 'isolate')
+      where = `WHERE category IN ('wpi','isolate')`;
 
-    // ===== ORDER =====
     let order = `
       ORDER BY
-        COALESCE(score, 0) DESC,
-        COALESCE(droprate, 0) DESC,
+        COALESCE(score,0) DESC,
         calculated_at DESC
     `;
 
     if (sort === 'price') {
       order = `
         ORDER BY
-          COALESCE(buyboxprice, buyboxfallback) ASC NULLS LAST,
+          COALESCE(buyboxprice,buyboxfallback) ASC NULLS LAST,
           calculated_at DESC
       `;
     } else if (sort === 'sales') {
@@ -118,13 +88,13 @@ export async function GET(req: NextRequest) {
 
     const pool = getPool();
 
-    // ===== カラム存在チェック =====
     const meta = await pool.query<{ column_name: string }>(`
       SELECT column_name
       FROM information_schema.columns
       WHERE table_schema='public'
         AND table_name='${table}'
     `);
+
     const cols = new Set(meta.rows.map(r => r.column_name));
 
     const selectParts = [
@@ -134,8 +104,6 @@ export async function GET(req: NextRequest) {
       pickCol(cols, 'buyboxprice', 'buyboxprice'),
       pickCol(cols, 'buyboxfallback', 'buyboxfallback'),
       pickCol(cols, 'salesrank', 'salesrank'),
-      pickCol(cols, 'droprate', 'droprate'),
-      pickCol(cols, 'droprateprev', 'droprateprev'),
       pickCol(cols, 'score', 'score'),
       pickCol(cols, 'imageurl', 'imageurl'),
       pickCol(cols, 'category', 'category'),
@@ -162,8 +130,6 @@ export async function GET(req: NextRequest) {
         title: p.title,
         brand: p.brand ?? '',
         price,
-        dropRate: p.droprate ?? 0,
-        dropRateDiff: (p.droprate ?? 0) - (p.droprateprev ?? 0),
         score: p.score ?? 0,
         imageUrl: normalizeImageUrl(p.imageurl),
         affiliateUrl: `https://www.amazon.co.jp/dp/${p.asin}`,

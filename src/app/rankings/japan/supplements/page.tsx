@@ -13,8 +13,6 @@ type ProductItem = {
   brand: string;
   price: number | null;
   imageUrl: string | null;
-  dropRate: number | null;
-  dropRateDiff: number | null;
   score: number | null;
   affiliateUrl: string;
 };
@@ -96,15 +94,6 @@ const RankingSection = ({
                     : '―'}
                 </p>
                 <p>
-                  ドロップ回数: {item.dropRate ?? '―'}
-                  {typeof item.dropRateDiff === 'number' &&
-                    (item.dropRateDiff > 0
-                      ? ` ↑${item.dropRateDiff}`
-                      : item.dropRateDiff < 0
-                      ? ` ↓${Math.abs(item.dropRateDiff)}`
-                      : '')}
-                </p>
-                <p>
                   スコア:{' '}
                   {item.score != null && item.score > 0 ? item.score : '―'}
                 </p>
@@ -146,8 +135,11 @@ export default function SupplementRankingPage() {
   useEffect(() => {
     setLoading(true);
 
-    // ★ 正しい API（統合後）
-    fetch('/api/ranking?type=bcaa', { cache: 'no-store' })
+    // ★ basePath 環境対応：必ず origin 付きで叩く
+    fetch(
+      new URL('/api/ranking?type=bcaa&sort=score', window.location.origin),
+      { cache: 'no-store' }
+    )
       .then(res => res.json())
       .then(data => setItems(Array.isArray(data) ? data : []))
       .catch(() => setItems([]))
