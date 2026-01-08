@@ -47,7 +47,7 @@ function pickCol(cols: Set<string>, lower: string, alias: string) {
   return cols.has(lower) ? `"${lower}" AS ${alias}` : `NULL AS ${alias}`;
 }
 
-// ===== imageurl 正規化（最終防波堤・強化版）=====
+// ===== imageurl 正規化（最終防波堤）=====
 function normalizeImageUrl(imageurl: string | null): string | null {
   if (!imageurl) return null;
 
@@ -78,61 +78,34 @@ export async function GET(req: NextRequest) {
     const sort = (sp.get('sort') ?? 'score').toLowerCase();
     const limit = 10;
 
-    let table = 'products';
+    /**
+     * ★ ここが今回の本丸 ★
+     * ランキングの参照先を v_suppbase_score_phase1 に統一
+     */
+    let table = 'v_suppbase_score_phase1';
     let where = '';
 
-    // ===== プロテイン系 =====
-    if (type === 'whey') {
-      table = 'v_rank_whey_30d';
+    // type ごとの差分は WHERE で吸収
+    if (type === 'soy') {
+      where = `
+        WHERE (
+          title ILIKE '%ソイ%' OR
+          title ILIKE '%soy%' OR
+          title ILIKE '%SOY%' OR
+          title ILIKE '%大豆%' OR
+          title ILIKE '%植物性%'
+        )
+      `;
     } else if (type === 'isolate') {
-      table = 'v_rank_wpi_30d';
-    } else if (type === 'soy') {
-      table = 'products';
       where = `
-        WHERE imageurl IS NOT NULL
-          AND (
-            title ILIKE '%ソイ%' OR
-            title ILIKE '%soy%' OR
-            title ILIKE '%SOY%' OR
-            title ILIKE '%大豆%' OR
-            title ILIKE '%植物性%'
-          )
+        WHERE (
+          title ILIKE '%WPI%' OR
+          title ILIKE '%アイソレート%'
+        )
       `;
-    }
-
-    // ===== サプリ系 =====
-    else if (type === 'bcaa') {
-      table = 'products';
-      where = `
-        WHERE imageurl IS NOT NULL
-          AND (
-            title ILIKE '%BCAA%' OR
-            title ILIKE '%bcaa%' OR
-            title ILIKE '%ＢＣＡＡ%'
-          )
-          AND title NOT ILIKE '%プロテイン%'
-          AND title NOT ILIKE '%protein%'
-          AND title NOT ILIKE '%ホエイ%'
-          AND title NOT ILIKE '%whey%'
-          AND title NOT ILIKE '%wpc%'
-          AND title NOT ILIKE '%wpi%'
-      `;
-    } else if (type === 'eaa') {
-      table = 'products';
-      where = `
-        WHERE imageurl IS NOT NULL
-          AND (
-            title ILIKE '%EAA%' OR
-            title ILIKE '%eaa%' OR
-            title ILIKE '%ＥＡＡ%'
-          )
-          AND title NOT ILIKE '%プロテイン%'
-          AND title NOT ILIKE '%protein%'
-          AND title NOT ILIKE '%ホエイ%'
-          AND title NOT ILIKE '%whey%'
-          AND title NOT ILIKE '%wpc%'
-          AND title NOT ILIKE '%wpi%'
-      `;
+    } else {
+      // whey（デフォルト）
+      where = '';
     }
 
     // ===== ORDER =====
@@ -140,25 +113,26 @@ export async function GET(req: NextRequest) {
       ORDER BY
         COALESCE(score, 0) DESC,
         COALESCE(droprate, 0) DESC,
-        updated_at DESC
+        calculated_at DESC
     `;
 
     if (sort === 'price') {
       order = `
         ORDER BY
           COALESCE(buyboxprice, buyboxfallback) ASC NULLS LAST,
-          updated_at DESC
+          calculated_at DESC
       `;
     } else if (sort === 'sales') {
       order = `
         ORDER BY
           salesrank ASC NULLS LAST,
-          updated_at DESC
+          calculated_at DESC
       `;
     }
 
     const pool = getPool();
 
+    // ===== カラム存在チェック =====
     const meta = await pool.query<{ column_name: string }>(`
       SELECT column_name
       FROM information_schema.columns
