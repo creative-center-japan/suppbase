@@ -1,23 +1,21 @@
-// healthy-site/src/app/api/ranking/route.ts
+// healthy-site\src\app\api\ranking\route.ts
 
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { Pool } from 'pg';
 
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-
 type Row = {
   asin: string;
   title: string;
   brand: string | null;
   imageurl: string | null;
-  buyboxprice: number | null; // Keepa生値
+  buyboxprice: number | null;
   salesrank: number | null;
   rating: number | null;
   reviewcount: number | null;
   score: number | null;
-  category: string | null;
+  display_category: string | null;
 };
 
 let _pool: Pool | null = null;
@@ -41,63 +39,41 @@ export async function GET(req: NextRequest) {
   try {
     const sp = new URL(req.url).searchParams;
     const type = (sp.get('type') ?? 'whey').toLowerCase();
-    const sort = (sp.get('sort') ?? 'score').toLowerCase();
     const limit = 10;
 
-    const table = 'v_suppbase_score_phase1';
     let where = '';
 
-    // ★ 実データに合わせた分類
     if (type === 'whey') {
-      where = `WHERE category IN ('whey','protein')`;
+      where = `WHERE t.display_category = 'whey'`;
     } else if (type === 'soy') {
-      where = `WHERE category = 'protein' AND title ILIKE '%ソイ%'`;
+      where = `WHERE t.display_category = 'soy'`;
     } else if (type === 'isolate') {
-      // isolate = whey のサブ扱い（暫定）
-      where = `WHERE category IN ('whey','protein')`;
+      where = `WHERE t.display_category = 'isolate'`;
     } else if (type === 'bcaa') {
-      where = `WHERE category = 'bcaa'`;
+      where = `WHERE t.display_category IN ('bcaa','supplement')`;
     }
 
-    let order = `
-      ORDER BY
-        COALESCE(score,0) DESC,
-        calculated_at DESC
-    `;
-
-    if (sort === 'price') {
-      order = `
-        ORDER BY
-          buyboxprice ASC NULLS LAST,
-          calculated_at DESC
-      `;
-    } else if (sort === 'sales') {
-      order = `
-        ORDER BY
-          salesrank ASC NULLS LAST,
-          calculated_at DESC
-      `;
-    }
-
-    const pool = getPool();
     const sql = `
       SELECT
-        asin,
-        title,
-        brand,
-        imageurl,
-        buyboxprice,
-        salesrank,
-        rating,
-        reviewcount,
-        score,
-        category
-      FROM ${table}
+        p.asin,
+        p.title,
+        p.brand,
+        p.imageurl,
+        p.buyboxprice,
+        p.salesrank,
+        p.rating,
+        p.reviewcount,
+        v.score,
+        t.display_category
+      FROM v_suppbase_score_phase1 v
+      JOIN products p ON p.asin = v.asin
+      JOIN tracked_asins t ON t.asin = v.asin
       ${where}
-      ${order}
+      ORDER BY COALESCE(v.score,0) DESC
       LIMIT $1
     `;
 
+    const pool = getPool();
     const { rows } = await pool.query<Row>(sql, [limit]);
 
     const items = rows.map((p, i) => ({
@@ -105,7 +81,12 @@ export async function GET(req: NextRequest) {
       asin: p.asin,
       title: p.title,
       brand: p.brand ?? '',
-      price: p.buyboxprice != null ? Math.round(p.buyboxprice / 100) : null,
+      price:
+        p.buyboxprice != null
+          ? p.buyboxprice > 1000
+            ? Math.round(p.buyboxprice / 100)
+            : p.buyboxprice
+          : null,
       score: p.score ?? 0,
       rating: p.rating,
       reviewCount: p.reviewcount,
