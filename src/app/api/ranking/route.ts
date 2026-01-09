@@ -1,5 +1,7 @@
 // healthy-site/src/app/api/ranking/route.ts
 
+// healthy-site/src/app/api/ranking/route.ts
+
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -10,43 +12,24 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
-type Row = {
-  asin: string;
-  title: string;
-  brand: string | null;
-  imageurl: string | null;
-  buyboxprice: number | null;
-  rating: number | null;
-  reviewcount: number | null;
-  salesrank: number | null;
-  score: number | null;
-};
-
-function normalizeImageUrl(imageurl: string | null): string | null {
-  if (!imageurl) return null;
-  if (imageurl.startsWith('http')) return imageurl;
-  return `https://images-na.ssl-images-amazon.com/images/I/${imageurl}`;
-}
-
 export async function GET(req: NextRequest) {
   try {
     const sp = new URL(req.url).searchParams;
-
     const type = (sp.get('type') ?? 'whey').toLowerCase();
-    const sort = (sp.get('sort') ?? 'score').toLowerCase();
     const limit = Number(sp.get('limit') ?? 10);
 
-    // ★ VIEW 切替（これが全て）
-    let viewName = 'v_rank_whey_30d';
+    // ★ とにかく title ベースで出す
+    let where = '';
 
-    if (type === 'soy') viewName = 'v_rank_soy_30d';
-    if (type === 'isolate') viewName = 'v_rank_wpi_30d';
-
-    // 並び順（基本は score）
-    let orderBy = 'score DESC';
-
-    if (sort === 'price') orderBy = 'buyboxprice ASC NULLS LAST';
-    if (sort === 'sales') orderBy = 'salesrank ASC NULLS LAST';
+    if (type === 'whey') {
+      where = `WHERE title ILIKE '%ホエイ%' OR title ILIKE '%WHEY%'`;
+    } else if (type === 'soy') {
+      where = `WHERE title ILIKE '%ソイ%' OR title ILIKE '%SOY%'`;
+    } else if (type === 'isolate') {
+      where = `WHERE title ILIKE '%WPI%' OR title ILIKE '%アイソレート%'`;
+    } else if (type === 'bcaa') {
+      where = `WHERE title ILIKE '%BCAA%'`;
+    }
 
     const sql = `
       SELECT
@@ -57,36 +40,29 @@ export async function GET(req: NextRequest) {
         buyboxprice,
         rating,
         reviewcount,
-        salesrank,
-        score
-      FROM ${viewName}
-      ORDER BY ${orderBy}
+        salesrank
+      FROM products
+      ${where}
       LIMIT $1
     `;
 
-    const { rows } = await pool.query<Row>(sql, [limit]);
+    const { rows } = await pool.query(sql, [limit]);
 
-    const items = rows.map((p, i) => ({
-      rank: i + 1,
-      asin: p.asin,
-      title: p.title,
-      brand: p.brand ?? '',
-      price:
-        p.buyboxprice != null
-          ? p.buyboxprice > 1000
-            ? Math.round(p.buyboxprice / 100)
-            : p.buyboxprice
-          : null,
-      score: p.score ?? 0,
-      rating: p.rating,
-      reviewCount: p.reviewcount,
-      imageUrl: normalizeImageUrl(p.imageurl),
-      affiliateUrl: `https://www.amazon.co.jp/dp/${p.asin}`,
-    }));
-
-    return NextResponse.json(items);
+    return NextResponse.json(
+      rows.map((p, i) => ({
+        rank: i + 1,
+        asin: p.asin,
+        title: p.title,
+        brand: p.brand ?? '',
+        price: p.buyboxprice,
+        rating: p.rating,
+        reviewCount: p.reviewcount,
+        imageUrl: p.imageurl,
+        affiliateUrl: `https://www.amazon.co.jp/dp/${p.asin}`,
+      }))
+    );
   } catch (e) {
-    console.error('❌ /api/ranking error:', e);
-    return NextResponse.json([], { status: 200 });
+    console.error('❌ ranking api error', e);
+    return NextResponse.json([]);
   }
 }
