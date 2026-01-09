@@ -41,16 +41,17 @@ export async function GET(req: NextRequest) {
     const type = (sp.get('type') ?? 'whey').toLowerCase();
     const limit = 10;
 
-    let where = '';
+    // ★ JOIN 条件を切り替える
+    let joinCond = '';
 
     if (type === 'whey') {
-      where = `WHERE COALESCE(t.display_category, 'whey') = 'whey'`;
+      joinCond = `AND t.display_category = 'whey'`;
     } else if (type === 'soy') {
-      where = `WHERE t.display_category = 'soy'`;
+      joinCond = `AND t.display_category = 'soy'`;
     } else if (type === 'isolate') {
-      where = `WHERE t.display_category = 'isolate'`;
+      joinCond = `AND t.display_category = 'isolate'`;
     } else if (type === 'bcaa') {
-      where = `WHERE t.display_category IN ('bcaa','supplement')`;
+      joinCond = `AND t.display_category IN ('bcaa','supplement')`;
     }
 
     const sql = `
@@ -66,8 +67,9 @@ export async function GET(req: NextRequest) {
         v.score,
         t.display_category
       FROM v_suppbase_score_phase1 v
-      LEFT JOIN tracked_asins t ON t.asin = v.asin
-      ${where}
+      LEFT JOIN tracked_asins t
+        ON t.asin = v.asin
+        ${joinCond}
       ORDER BY COALESCE(v.score, 0) DESC
       LIMIT $1
     `;
