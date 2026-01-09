@@ -1,9 +1,21 @@
-// healthy-site\src\app\api\ranking\route.ts
+// healthy-site/src/app/api/ranking/route.ts
 
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { Pool } from 'pg';
+
+type Row = {
+  asin: string;
+  title: string;
+  brand: string | null;
+  imageurl: string | null;
+  buyboxprice: number | null;
+  salesrank: number | null;
+  rating: number | null;
+  reviewcount: number | null;
+  score: number | null;
+};
 
 let _pool: Pool | null = null;
 
@@ -60,9 +72,9 @@ export async function GET(req: NextRequest) {
     `;
 
     const pool = getPool();
-    const { rows } = await pool.query(sql, [limit]);
+    const { rows } = await pool.query<Row>(sql, [limit]);
 
-    const items = rows.map((p: any, i: number) => ({
+    const items = rows.map((p: Row, i: number) => ({
       rank: i + 1,
       asin: p.asin,
       title: p.title,
