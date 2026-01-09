@@ -5,28 +5,22 @@ export const runtime = 'nodejs';
 import { NextRequest, NextResponse } from 'next/server';
 import { Pool } from 'pg';
 
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL!,
+  ssl: { rejectUnauthorized: false },
+});
+
 type Row = {
   asin: string;
   title: string;
   brand: string | null;
   imageurl: string | null;
   buyboxprice: number | null;
-  salesrank: number | null;
   rating: number | null;
   reviewcount: number | null;
+  salesrank: number | null;
   score: number | null;
 };
-
-let _pool: Pool | null = null;
-
-function getPool() {
-  if (_pool) return _pool;
-  _pool = new Pool({
-    connectionString: process.env.DATABASE_URL!,
-    ssl: { rejectUnauthorized: false },
-  });
-  return _pool;
-}
 
 function normalizeImageUrl(imageurl: string | null): string | null {
   if (!imageurl) return null;
@@ -37,44 +31,42 @@ function normalizeImageUrl(imageurl: string | null): string | null {
 export async function GET(req: NextRequest) {
   try {
     const sp = new URL(req.url).searchParams;
+
     const type = (sp.get('type') ?? 'whey').toLowerCase();
-    const limit = 10;
+    const sort = (sp.get('sort') ?? 'score').toLowerCase();
+    const limit = Number(sp.get('limit') ?? 10);
 
-    let where = '';
+    // ★ VIEW 切替（これが全て）
+    let viewName = 'v_rank_whey_30d';
 
-    if (type === 'whey') {
-      where = `WHERE COALESCE(t.display_category, 'whey') = 'whey'`;
-    } else if (type === 'soy') {
-      where = `WHERE t.display_category = 'soy'`;
-    } else if (type === 'isolate') {
-      where = `WHERE t.display_category = 'isolate'`;
-    } else if (type === 'bcaa') {
-      where = `WHERE t.display_category IN ('bcaa','supplement')`;
-    }
+    if (type === 'soy') viewName = 'v_rank_soy_30d';
+    if (type === 'isolate') viewName = 'v_rank_wpi_30d';
+
+    // 並び順（基本は score）
+    let orderBy = 'score DESC';
+
+    if (sort === 'price') orderBy = 'buyboxprice ASC NULLS LAST';
+    if (sort === 'sales') orderBy = 'salesrank ASC NULLS LAST';
 
     const sql = `
       SELECT
-        v.asin,
-        v.title,
-        v.brand,
-        v.imageurl,
-        v.buyboxprice,
-        v.salesrank,
-        v.rating,
-        v.reviewcount,
-        v.score
-      FROM v_suppbase_score_phase1 v
-      LEFT JOIN tracked_asins t
-        ON t.asin = v.asin
-      ${where}
-      ORDER BY COALESCE(v.score, 0) DESC
+        asin,
+        title,
+        brand,
+        imageurl,
+        buyboxprice,
+        rating,
+        reviewcount,
+        salesrank,
+        score
+      FROM ${viewName}
+      ORDER BY ${orderBy}
       LIMIT $1
     `;
 
-    const pool = getPool();
     const { rows } = await pool.query<Row>(sql, [limit]);
 
-    const items = rows.map((p: Row, i: number) => ({
+    const items = rows.map((p, i) => ({
       rank: i + 1,
       asin: p.asin,
       title: p.title,
