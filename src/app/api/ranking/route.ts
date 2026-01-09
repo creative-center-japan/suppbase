@@ -51,25 +51,27 @@ export async function GET(req: NextRequest) {
       where = `WHERE t.display_category = 'isolate'`;
     } else if (type === 'bcaa') {
       where = `WHERE t.display_category IN ('bcaa','supplement')`;
+    } else {
+      // フォールバック（安全）
+      where = `WHERE t.display_category IS NOT NULL`;
     }
 
     const sql = `
       SELECT
-        p.asin,
-        p.title,
-        p.brand,
-        p.imageurl,
-        p.buyboxprice,
-        p.salesrank,
-        p.rating,
-        p.reviewcount,
+        v.asin,
+        v.title,
+        v.brand,
+        v.imageurl,
+        v.buyboxprice,
+        v.salesrank,
+        v.rating,
+        v.reviewcount,
         v.score,
         t.display_category
       FROM v_suppbase_score_phase1 v
-      JOIN products p ON p.asin = v.asin
       JOIN tracked_asins t ON t.asin = v.asin
       ${where}
-      ORDER BY COALESCE(v.score,0) DESC
+      ORDER BY COALESCE(v.score, 0) DESC
       LIMIT $1
     `;
 
