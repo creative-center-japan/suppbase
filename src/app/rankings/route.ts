@@ -1,26 +1,21 @@
 // healthy-site\src\app\rankings\route.ts
 
-// healthy-site\src\app\rankings\route.ts
-
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { Pool } from 'pg';
 
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-
 type Row = {
+  rank: number;
   asin: string;
   title: string;
   brand: string | null;
   imageurl: string | null;
-  buyboxprice: number | null; // Keepa生値（1/100円）
+  buyboxprice: number | null;
   salesrank: number | null;
   rating: number | null;
   reviewcount: number | null;
   score: number | null;
-  category: string | null;
-  calculated_at: string;
 };
 
 let _pool: Pool | null = null;
@@ -44,60 +39,35 @@ export async function GET(req: NextRequest) {
   try {
     const sp = new URL(req.url).searchParams;
     const type = (sp.get('type') ?? 'whey').toLowerCase();
-    const sort = (sp.get('sort') ?? 'score').toLowerCase();
     const limit = 10;
 
-    const table = 'v_suppbase_score_phase1';
     let where = '';
 
-    /**
-     * ✅ category 条件（実データ混在を吸収）
-     */
+    // ★ title ベース分類（category は使わない）
     if (type === 'whey') {
       where = `
-        WHERE category ILIKE '%whey%'
-          AND category NOT ILIKE '%isolate%'
-          AND category NOT ILIKE '%wpi%'
-      `;
-    } else if (type === 'soy') {
-      where = `
-        WHERE category ILIKE '%soy%'
-           OR category ILIKE '%soya%'
+        WHERE title NOT ILIKE '%WPI%'
+          AND title NOT ILIKE '%アイソレート%'
+          AND title NOT ILIKE '%ソイ%'
+          AND title NOT ILIKE '%soy%'
       `;
     } else if (type === 'isolate') {
       where = `
-        WHERE category ILIKE '%isolate%'
-           OR category ILIKE '%wpi%'
-           OR category ILIKE '%whey isolate%'
+        WHERE title ILIKE '%WPI%'
+           OR title ILIKE '%アイソレート%'
+      `;
+    } else if (type === 'soy') {
+      where = `
+        WHERE title ILIKE '%ソイ%'
+           OR title ILIKE '%soy%'
       `;
     }
 
-    /**
-     * 並び順
-     */
-    let order = `
-      ORDER BY
-        COALESCE(score, 0) DESC,
-        calculated_at DESC
-    `;
-
-    if (sort === 'price') {
-      order = `
-        ORDER BY
-          buyboxprice ASC NULLS LAST,
-          calculated_at DESC
-      `;
-    } else if (sort === 'sales') {
-      order = `
-        ORDER BY
-          salesrank ASC NULLS LAST,
-          calculated_at DESC
-      `;
-    }
-
-    const pool = getPool();
     const sql = `
       SELECT
+        ROW_NUMBER() OVER (
+          ORDER BY COALESCE(score,0) DESC
+        ) AS rank,
         asin,
         title,
         brand,
@@ -106,28 +76,31 @@ export async function GET(req: NextRequest) {
         salesrank,
         rating,
         reviewcount,
-        score,
-        category,
-        calculated_at
-      FROM ${table}
+        score
+      FROM v_suppbase_score_phase1
       ${where}
-      ${order}
+      ORDER BY rank
       LIMIT $1
     `;
 
+    const pool = getPool();
     const { rows } = await pool.query<Row>(sql, [limit]);
 
-    const items = rows.map((p, i) => {
+    const items = rows.map(p => {
       const price =
-        p.buyboxprice != null ? Math.round(p.buyboxprice / 100) : null;
+        p.buyboxprice != null
+          ? p.buyboxprice > 1000
+            ? Math.round(p.buyboxprice / 100)
+            : p.buyboxprice
+          : null;
 
       return {
-        rank: i + 1,
+        rank: p.rank,
         asin: p.asin,
         title: p.title,
         brand: p.brand ?? '',
         price,
-        score: p.score ?? null,
+        score: p.score,
         rating: p.rating,
         reviewCount: p.reviewcount,
         imageUrl: normalizeImageUrl(p.imageurl),
