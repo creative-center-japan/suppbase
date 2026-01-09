@@ -1,22 +1,11 @@
 // healthy-site\src\app\api\ranking\route.ts
 
+// healthy-site/src/app/api/ranking/route.ts
+
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { Pool } from 'pg';
-
-type Row = {
-  asin: string;
-  title: string;
-  brand: string | null;
-  imageurl: string | null;
-  buyboxprice: number | null;
-  salesrank: number | null;
-  rating: number | null;
-  reviewcount: number | null;
-  score: number | null;
-  display_category: string | null;
-};
 
 let _pool: Pool | null = null;
 
@@ -41,17 +30,16 @@ export async function GET(req: NextRequest) {
     const type = (sp.get('type') ?? 'whey').toLowerCase();
     const limit = 10;
 
-    // ★ JOIN 条件を切り替える
-    let joinCond = '';
+    let where = '';
 
     if (type === 'whey') {
-      joinCond = `AND t.display_category = 'whey'`;
+      where = `WHERE COALESCE(t.display_category, 'whey') = 'whey'`;
     } else if (type === 'soy') {
-      joinCond = `AND t.display_category = 'soy'`;
+      where = `WHERE t.display_category = 'soy'`;
     } else if (type === 'isolate') {
-      joinCond = `AND t.display_category = 'isolate'`;
+      where = `WHERE t.display_category = 'isolate'`;
     } else if (type === 'bcaa') {
-      joinCond = `AND t.display_category IN ('bcaa','supplement')`;
+      where = `WHERE t.display_category IN ('bcaa','supplement')`;
     }
 
     const sql = `
@@ -64,20 +52,19 @@ export async function GET(req: NextRequest) {
         v.salesrank,
         v.rating,
         v.reviewcount,
-        v.score,
-        t.display_category
+        v.score
       FROM v_suppbase_score_phase1 v
       LEFT JOIN tracked_asins t
         ON t.asin = v.asin
-        ${joinCond}
+      ${where}
       ORDER BY COALESCE(v.score, 0) DESC
       LIMIT $1
     `;
 
     const pool = getPool();
-    const { rows } = await pool.query<Row>(sql, [limit]);
+    const { rows } = await pool.query(sql, [limit]);
 
-    const items = rows.map((p, i) => ({
+    const items = rows.map((p: any, i: number) => ({
       rank: i + 1,
       asin: p.asin,
       title: p.title,
