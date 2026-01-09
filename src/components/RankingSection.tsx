@@ -1,121 +1,123 @@
 // healthy-site\src\components\RankingSection.tsx
 
-export const runtime = 'nodejs';
+'use client';
 
-import { NextRequest, NextResponse } from 'next/server';
-import { Pool } from 'pg';
+import Image from 'next/image';
 
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-
-type Row = {
+export type RankingItem = {
+  rank: number;
   asin: string;
   title: string;
-  brand: string | null;
-  imageurl: string | null;
-  buyboxprice: number | null; // Keepa生値
-  salesrank: number | null;
-  rating: number | null;
-  reviewcount: number | null;
+  brand: string;
+  price: number | null;
   score: number | null;
-  category: string | null;
+  rating?: number | null;
+  reviewCount?: number | null;
+  imageUrl: string | null;
+  affiliateUrl: string;
 };
 
-let _pool: Pool | null = null;
-
-function getPool() {
-  if (_pool) return _pool;
-  _pool = new Pool({
-    connectionString: process.env.DATABASE_URL!,
-    ssl: { rejectUnauthorized: false },
-  });
-  return _pool;
-}
-
-function normalizeImageUrl(imageurl: string | null): string | null {
-  if (!imageurl) return null;
-  if (imageurl.startsWith('http')) return imageurl;
-  return `https://images-na.ssl-images-amazon.com/images/I/${imageurl}`;
-}
-
-export async function GET(req: NextRequest) {
-  try {
-    const sp = new URL(req.url).searchParams;
-    const type = (sp.get('type') ?? 'whey').toLowerCase();
-    const sort = (sp.get('sort') ?? 'score').toLowerCase();
-    const limit = 10;
-
-    const table = 'v_suppbase_score_phase1';
-    let where = '';
-
-    // ★ 実データに合わせた分類
-    if (type === 'whey') {
-      where = `WHERE category IN ('whey','protein')`;
-    } else if (type === 'soy') {
-      where = `WHERE category = 'protein' AND title ILIKE '%ソイ%'`;
-    } else if (type === 'isolate') {
-      // isolate = whey のサブ扱い（暫定）
-      where = `WHERE category IN ('whey','protein')`;
-    } else if (type === 'bcaa') {
-      where = `WHERE category = 'bcaa'`;
-    }
-
-    let order = `
-      ORDER BY
-        COALESCE(score,0) DESC,
-        calculated_at DESC
-    `;
-
-    if (sort === 'price') {
-      order = `
-        ORDER BY
-          buyboxprice ASC NULLS LAST,
-          calculated_at DESC
-      `;
-    } else if (sort === 'sales') {
-      order = `
-        ORDER BY
-          salesrank ASC NULLS LAST,
-          calculated_at DESC
-      `;
-    }
-
-    const pool = getPool();
-    const sql = `
-      SELECT
-        asin,
-        title,
-        brand,
-        imageurl,
-        buyboxprice,
-        salesrank,
-        rating,
-        reviewcount,
-        score,
-        category
-      FROM ${table}
-      ${where}
-      ${order}
-      LIMIT $1
-    `;
-
-    const { rows } = await pool.query<Row>(sql, [limit]);
-
-    const items = rows.map((p, i) => ({
-      rank: i + 1,
-      asin: p.asin,
-      title: p.title,
-      brand: p.brand ?? '',
-      price: p.buyboxprice != null ? Math.round(p.buyboxprice / 100) : null,
-      score: p.score ?? 0,
-      rating: p.rating,
-      reviewCount: p.reviewcount,
-      imageUrl: normalizeImageUrl(p.imageurl),
-      affiliateUrl: `https://www.amazon.co.jp/dp/${p.asin}`,
-    }));
-
-    return NextResponse.json(items);
-  } catch (e) {
-    console.error('❌ /api/ranking error:', e);
-    return NextResponse.json([], { status: 200 });
+export default function RankingSection({
+  items,
+  loading,
+}: {
+  items: RankingItem[];
+  loading?: boolean;
+}) {
+  if (loading) {
+    return (
+      <p className="text-center text-gray-400 py-8">
+        ランキング読み込み中…
+      </p>
+    );
   }
+
+  if (!items.length) {
+    return (
+      <p className="text-center text-gray-400 py-8">
+        データがありません
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {items.map(item => (
+        <div
+          key={item.asin}
+          className={`p-4 rounded-xl shadow-sm flex gap-4 ${
+            item.rank === 1
+              ? 'border-2 border-yellow-400'
+              : item.rank === 2
+              ? 'border-2 border-gray-400'
+              : item.rank === 3
+              ? 'border-2 border-orange-400'
+              : 'border border-gray-200'
+          }`}
+        >
+          <Image
+            src={item.imageUrl || '/no-image.png'}
+            alt={item.title}
+            width={96}
+            height={96}
+            className="object-contain rounded"
+            unoptimized
+          />
+
+          <div className="flex-1 flex justify-between items-end">
+            <div>
+              <h3 className="text-lg font-semibold">
+                #{item.rank} {item.title}
+              </h3>
+
+              <p className="text-sm text-gray-600">{item.brand}</p>
+
+              <div className="flex items-center gap-3 mt-2">
+                <span className="text-xl font-bold text-gray-900">
+                  {item.price != null
+                    ? `¥${item.price.toLocaleString()}`
+                    : '―'}
+                </span>
+
+                <span
+                  className={`px-2 py-0.5 rounded-full text-sm font-semibold ${
+                    (item.score ?? 0) >= 80
+                      ? 'bg-green-100 text-green-700'
+                      : (item.score ?? 0) >= 65
+                      ? 'bg-yellow-100 text-yellow-700'
+                      : 'bg-gray-100 text-gray-600'
+                  }`}
+                >
+                  スコア {item.score}
+                </span>
+              </div>
+
+              {item.rating != null && (
+                <div className="flex items-center gap-1 text-sm mt-1">
+                  <span className="text-yellow-500">
+                    {'★'.repeat(Math.floor(item.rating))}
+                  </span>
+                  <span className="text-gray-500">
+                    {item.rating.toFixed(1)}（{item.reviewCount ?? 0}）
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <a
+              href={item.affiliateUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="shrink-0 inline-flex items-center justify-center
+                         rounded-md bg-green-600 px-4 py-2
+                         text-white text-sm font-semibold
+                         hover:bg-green-700 transition"
+            >
+              Amazonで見る
+            </a>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
