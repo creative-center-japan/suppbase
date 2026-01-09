@@ -10,13 +10,13 @@ KEEPA_API_KEY = os.environ["KEEPA_API_KEY"]
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE"]
 
-# ===== Keepa / Plan20 設定 =====
+# ===== Keepa 設定 =====
 DOMAIN_ID = 5  # Amazon.co.jp
 API_URL = "https://api.keepa.com/product"
 
-BATCH_SIZE = 10          # 10 ASIN / request
-SLEEP_SEC = 30           # 30秒 = 20 tokens / 分
-MAX_ASINS_PER_RUN = 100  # 1回の実行上限
+BATCH_SIZE = 10
+SLEEP_SEC = 30
+MAX_ASINS_PER_RUN = 100
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -39,8 +39,8 @@ if not asins:
     print("[SKIP] no tracked asins")
     raise SystemExit(0)
 
-rows = []
 now = datetime.now(timezone.utc).isoformat()
+rows = []
 
 # ===== Keepa fetch =====
 for i in range(0, len(asins), BATCH_SIZE):
@@ -53,7 +53,7 @@ for i in range(0, len(asins), BATCH_SIZE):
             "domain": DOMAIN_ID,
             "asin": ",".join(batch),
             "stats": 180,
-            "update": 1,   # 強制更新（件数制限しているので安全）
+            "update": 1,
             "history": 0,
         },
         timeout=60,
@@ -70,34 +70,21 @@ for i in range(0, len(asins), BATCH_SIZE):
     for p in products:
         stats = p.get("stats") or {}
 
-        buyboxprice = stats.get("buyBoxPrice")
-        rating = stats.get("rating")
-        reviewcount = stats.get("reviewCount")
-
-        # ★ ここが今回の追加ポイント ★
-        salesrank = p.get("salesRank")
-        if not isinstance(salesrank, int):
-            salesrank = None
-
-        # BuyBox未確定は保存しない（既存方針）
-        if not buyboxprice or buyboxprice <= 0:
-            continue
-
         rows.append({
             "asin": p.get("asin"),
-            "title": p.get("title"),
-            "brand": p.get("brand"),
-            "buyboxprice": buyboxprice,
-            "rating": rating,
-            "reviewcount": reviewcount,
-            "salesrank": salesrank,   # ★ 保存
-            "updated_at": now,
+            "buybox_price": stats.get("buyBoxPrice"),      # NULL OK
+            "sales_rank": p.get("salesRank")
+                if isinstance(p.get("salesRank"), int) else None,
+            "review_count": stats.get("reviewCount"),
+            "rating": stats.get("rating"),
+            "captured_at": now,
         })
 
     safe_sleep(SLEEP_SEC)
 
+# ===== INSERT =====
 if rows:
-    supabase.table("products").upsert(rows).execute()
-    print(f"[OK] upserted {len(rows)} products (with salesRank)")
+    supabase.table("product_snapshots").insert(rows).execute()
+    print(f"[OK] inserted {len(rows)} snapshots")
 else:
-    print("[WARN] no valid BuyBox products")
+    print("[WARN] no snapshot rows generated")
