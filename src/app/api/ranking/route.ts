@@ -17,41 +17,50 @@ export async function GET(req: NextRequest) {
     const limit = Number(sp.get('limit') ?? 20);
 
     /**
-     * type → DB category 変換
-     * - whey / soy / supplement がDBの正規カテゴリ
-     * - isolate(WPI) は whey の派生表示
-     * - bcaa は supplement に寄せる
+     * 表示タイプ → DB条件
      */
-    const category =
-      type === 'isolate' ? 'whey' :
-      type === 'bcaa' ? 'supplement' :
-      type;
+    let categoryWhere = '';
+    let proteinTypeWhere = '';
+
+    if (type === 'isolate') {
+      categoryWhere = `t.category = 'whey'`;
+      proteinTypeWhere = `AND p.protein_type = 'wpi'`;
+    } else if (type === 'soy') {
+      categoryWhere = `t.category = 'soy'`;
+    } else {
+      // whey（WPI除外）
+      categoryWhere = `t.category = 'whey'`;
+      proteinTypeWhere = `AND (p.protein_type IS NULL OR p.protein_type != 'wpi')`;
+    }
 
     /**
-     * isolate の場合のみ追加条件
+     * 最新 snapshot を使う
      */
-    const isolateWhere =
-      type === 'isolate'
-        ? `AND (title ILIKE '%isolate%' OR title ILIKE '%アイソレート%' OR title ILIKE '%WPI%')`
-        : '';
-
     const sql = `
       SELECT
-        asin,
-        title,
-        brand,
-        buyboxprice,
-        rating,
-        reviewcount,
-        score
-      FROM v_rank_products_30d
-      WHERE category = $1
-      ${isolateWhere}
-      ORDER BY score DESC
-      LIMIT $2
+        p.asin,
+        p.title,
+        p.brand,
+        p.image_url,
+        s.buybox_price,
+        s.rating,
+        s.review_count
+      FROM products p
+      JOIN tracked_asins t ON t.asin = p.asin
+      JOIN LATERAL (
+        SELECT *
+        FROM product_snapshots
+        WHERE asin = p.asin
+        ORDER BY captured_at DESC
+        LIMIT 1
+      ) s ON true
+      WHERE ${categoryWhere}
+      ${proteinTypeWhere}
+      ORDER BY s.buybox_price ASC NULLS LAST
+      LIMIT $1
     `;
 
-    const { rows } = await pool.query(sql, [category, limit]);
+    const { rows } = await pool.query(sql, [limit]);
 
     return NextResponse.json(
       rows.map((p, i) => ({
@@ -59,9 +68,10 @@ export async function GET(req: NextRequest) {
         asin: p.asin,
         title: p.title,
         brand: p.brand ?? '',
-        price: p.buyboxprice,
+        price: p.buybox_price,
         rating: p.rating,
-        reviewCount: p.reviewcount,
+        reviewCount: p.review_count,
+        imageUrl: p.image_url,
         affiliateUrl: `https://www.amazon.co.jp/dp/${p.asin}`,
       }))
     );

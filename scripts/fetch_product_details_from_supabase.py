@@ -23,6 +23,22 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 def safe_sleep(sec):
     time.sleep(sec + random.uniform(0, 3))
 
+# ===== WPI 判定 =====
+def detect_protein_type(title: str | None) -> str:
+    if not title:
+        return "unknown"
+
+    t = title.lower()
+    if (
+        "wpi" in t
+        or "アイソレート" in t
+        or "isolate" in t
+        or "isolated" in t
+    ):
+        return "wpi"
+
+    return "other"  # ホエイ（WPC含む）
+
 # ===== 対象 ASIN 取得 =====
 res = (
     supabase.table("tracked_asins")
@@ -40,7 +56,9 @@ if not asins:
     raise SystemExit(0)
 
 now = datetime.now(timezone.utc).isoformat()
-rows = []
+
+product_rows = []    # products 用
+snapshot_rows = []   # product_snapshots 用
 
 # ===== Keepa fetch =====
 for i in range(0, len(asins), BATCH_SIZE):
@@ -68,11 +86,26 @@ for i in range(0, len(asins), BATCH_SIZE):
     products = r.json().get("products", [])
 
     for p in products:
+        asin = p.get("asin")
+        title = p.get("title")
+        brand = p.get("brand")
         stats = p.get("stats") or {}
 
-        rows.append({
-            "asin": p.get("asin"),
-            "buybox_price": stats.get("buyBoxPrice"),      # NULL OK
+        protein_type = detect_protein_type(title)
+
+        # --- products（マスタ＋判定結果） ---
+        product_rows.append({
+            "asin": asin,
+            "title": title,
+            "brand": brand,
+            "protein_type": protein_type,
+            "updated_at": now,
+        })
+
+        # --- product_snapshots（履歴・事実） ---
+        snapshot_rows.append({
+            "asin": asin,
+            "buybox_price": stats.get("buyBoxPrice"),  # NULL OK
             "sales_rank": p.get("salesRank")
                 if isinstance(p.get("salesRank"), int) else None,
             "review_count": stats.get("reviewCount"),
@@ -82,9 +115,19 @@ for i in range(0, len(asins), BATCH_SIZE):
 
     safe_sleep(SLEEP_SEC)
 
-# ===== INSERT =====
-if rows:
-    supabase.table("product_snapshots").insert(rows).execute()
-    print(f"[OK] inserted {len(rows)} snapshots")
-else:
-    print("[WARN] no snapshot rows generated")
+# ===== 保存 =====
+if product_rows:
+    supabase.table("products").upsert(
+        product_rows,
+        on_conflict="asin"
+    ).execute()
+    print(f"[OK] upserted {len(product_rows)} products")
+
+if snapshot_rows:
+    supabase.table("product_snapshots").insert(
+        snapshot_rows
+    ).execute()
+    print(f"[OK] inserted {len(snapshot_rows)} snapshots")
+
+if not product_rows and not snapshot_rows:
+    print("[WARN] no data saved")
