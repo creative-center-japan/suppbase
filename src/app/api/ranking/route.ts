@@ -1,7 +1,5 @@
 // healthy-site\src\app\api\ranking\route.ts
 
-// healthy-site/src/app/api/ranking/route.ts
-
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
