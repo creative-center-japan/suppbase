@@ -5,27 +5,34 @@
 import { useEffect, useState } from 'react';
 import RankingSection, { RankingItem } from '@/components/RankingSection';
 
-const tabs = [
+// ★ タブを型安全に定義（any禁止）
+type ProteinTab = 'whey' | 'soy' | 'isolate';
+
+const tabs: { id: ProteinTab; label: string }[] = [
   { id: 'whey', label: 'ホエイ' },
   { id: 'soy', label: 'ソイ' },
   { id: 'isolate', label: 'アイソレート（WPI）' },
 ];
 
 export default function ProteinRankingPage() {
-  const [activeTab, setActiveTab] =
-    useState<'whey' | 'soy' | 'isolate'>('whey');
+  const [activeTab, setActiveTab] = useState<ProteinTab>('whey');
   const [items, setItems] = useState<RankingItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
     setLoading(true);
 
     fetch(
-      new URL(`/api/ranking?type=${activeTab}&sort=score`, window.location.origin),
+      new URL(
+        `/api/ranking?type=${activeTab}&sort=score`,
+        window.location.origin
+      ),
       { cache: 'no-store' }
     )
       .then(res => res.json())
-      .then(data => setItems(Array.isArray(data) ? data : []))
+      .then(data => {
+        setItems(Array.isArray(data) ? data : []);
+      })
       .catch(() => setItems([]))
       .finally(() => setLoading(false));
   }, [activeTab]);
@@ -36,11 +43,12 @@ export default function ProteinRankingPage() {
         プロテイン ランキング
       </h1>
 
+      {/* タブ切り替え */}
       <div className="flex justify-center mb-6 gap-2">
         {tabs.map(tab => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
+            onClick={() => setActiveTab(tab.id)}
             className={`px-4 py-2 rounded-full border font-medium transition ${
               activeTab === tab.id
                 ? 'bg-green-600 text-white border-green-600'
@@ -52,6 +60,7 @@ export default function ProteinRankingPage() {
         ))}
       </div>
 
+      {/* 共通ランキングUI */}
       <RankingSection items={items} loading={loading} />
     </main>
   );
