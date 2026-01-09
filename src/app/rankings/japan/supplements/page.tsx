@@ -13,7 +13,7 @@ export default function SupplementRankingPage() {
     setLoading(true);
 
     fetch(
-      new URL('/api/ranking?type=bcaa&sort=score', window.location.origin),
+      new URL('/api/ranking?type=supplement&sort=score', window.location.origin),
       { cache: 'no-store' }
     )
       .then(res => res.json())

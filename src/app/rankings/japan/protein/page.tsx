@@ -5,7 +5,6 @@
 import { useEffect, useState } from 'react';
 import RankingSection, { RankingItem } from '@/components/RankingSection';
 
-// ★ タブを型安全に定義（any禁止）
 type ProteinTab = 'whey' | 'soy' | 'isolate';
 
 const tabs: { id: ProteinTab; label: string }[] = [
@@ -30,9 +29,7 @@ export default function ProteinRankingPage() {
       { cache: 'no-store' }
     )
       .then(res => res.json())
-      .then(data => {
-        setItems(Array.isArray(data) ? data : []);
-      })
+      .then(data => setItems(Array.isArray(data) ? data : []))
       .catch(() => setItems([]))
       .finally(() => setLoading(false));
   }, [activeTab]);
@@ -60,7 +57,6 @@ export default function ProteinRankingPage() {
         ))}
       </div>
 
-      {/* 共通ランキングUI */}
       <RankingSection items={items} loading={loading} />
     </main>
   );

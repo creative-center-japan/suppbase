@@ -1,7 +1,5 @@
 // healthy-site/src/app/api/ranking/route.ts
 
-// healthy-site/src/app/api/ranking/route.ts
-
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -16,37 +14,44 @@ export async function GET(req: NextRequest) {
   try {
     const sp = new URL(req.url).searchParams;
     const type = (sp.get('type') ?? 'whey').toLowerCase();
-    const limit = Number(sp.get('limit') ?? 10);
+    const limit = Number(sp.get('limit') ?? 20);
 
-    // ★ とにかく title ベースで出す
-    let where = '';
+    /**
+     * type → DB category 変換
+     * - whey / soy / supplement がDBの正規カテゴリ
+     * - isolate(WPI) は whey の派生表示
+     * - bcaa は supplement に寄せる
+     */
+    const category =
+      type === 'isolate' ? 'whey' :
+      type === 'bcaa' ? 'supplement' :
+      type;
 
-    if (type === 'whey') {
-      where = `WHERE title ILIKE '%ホエイ%' OR title ILIKE '%WHEY%'`;
-    } else if (type === 'soy') {
-      where = `WHERE title ILIKE '%ソイ%' OR title ILIKE '%SOY%'`;
-    } else if (type === 'isolate') {
-      where = `WHERE title ILIKE '%WPI%' OR title ILIKE '%アイソレート%'`;
-    } else if (type === 'bcaa') {
-      where = `WHERE title ILIKE '%BCAA%'`;
-    }
+    /**
+     * isolate の場合のみ追加条件
+     */
+    const isolateWhere =
+      type === 'isolate'
+        ? `AND (title ILIKE '%isolate%' OR title ILIKE '%アイソレート%' OR title ILIKE '%WPI%')`
+        : '';
 
     const sql = `
       SELECT
         asin,
         title,
         brand,
-        imageurl,
         buyboxprice,
         rating,
         reviewcount,
-        salesrank
-      FROM products
-      ${where}
-      LIMIT $1
+        score
+      FROM v_rank_products_30d
+      WHERE category = $1
+      ${isolateWhere}
+      ORDER BY score DESC
+      LIMIT $2
     `;
 
-    const { rows } = await pool.query(sql, [limit]);
+    const { rows } = await pool.query(sql, [category, limit]);
 
     return NextResponse.json(
       rows.map((p, i) => ({
@@ -57,7 +62,6 @@ export async function GET(req: NextRequest) {
         price: p.buyboxprice,
         rating: p.rating,
         reviewCount: p.reviewcount,
-        imageUrl: p.imageurl,
         affiliateUrl: `https://www.amazon.co.jp/dp/${p.asin}`,
       }))
     );
