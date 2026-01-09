@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Pool } from 'pg';
 
 type Row = {
+  rank: number;
   asin: string;
   title: string;
   brand: string | null;
@@ -15,7 +16,6 @@ type Row = {
   rating: number | null;
   reviewcount: number | null;
   score: number | null;
-  display_category: string | null;
 };
 
 let _pool: Pool | null = null;
@@ -43,58 +43,70 @@ export async function GET(req: NextRequest) {
 
     let where = '';
 
+    // ★ title ベース分類（category は使わない）
     if (type === 'whey') {
-      where = `WHERE t.display_category = 'whey'`;
-    } else if (type === 'soy') {
-      where = `WHERE t.display_category = 'soy'`;
+      where = `
+        WHERE title NOT ILIKE '%WPI%'
+          AND title NOT ILIKE '%アイソレート%'
+          AND title NOT ILIKE '%ソイ%'
+          AND title NOT ILIKE '%soy%'
+      `;
     } else if (type === 'isolate') {
-      where = `WHERE t.display_category = 'isolate'`;
-    } else if (type === 'bcaa') {
-      where = `WHERE t.display_category IN ('bcaa','supplement')`;
-    } else {
-      // フォールバック（安全）
-      where = `WHERE t.display_category IS NOT NULL`;
+      where = `
+        WHERE title ILIKE '%WPI%'
+           OR title ILIKE '%アイソレート%'
+      `;
+    } else if (type === 'soy') {
+      where = `
+        WHERE title ILIKE '%ソイ%'
+           OR title ILIKE '%soy%'
+      `;
     }
 
     const sql = `
       SELECT
-        v.asin,
-        v.title,
-        v.brand,
-        v.imageurl,
-        v.buyboxprice,
-        v.salesrank,
-        v.rating,
-        v.reviewcount,
-        v.score,
-        t.display_category
-      FROM v_suppbase_score_phase1 v
-      JOIN tracked_asins t ON t.asin = v.asin
+        ROW_NUMBER() OVER (
+          ORDER BY COALESCE(score,0) DESC
+        ) AS rank,
+        asin,
+        title,
+        brand,
+        imageurl,
+        buyboxprice,
+        salesrank,
+        rating,
+        reviewcount,
+        score
+      FROM v_suppbase_score_phase1
       ${where}
-      ORDER BY COALESCE(v.score, 0) DESC
+      ORDER BY rank
       LIMIT $1
     `;
 
     const pool = getPool();
     const { rows } = await pool.query<Row>(sql, [limit]);
 
-    const items = rows.map((p, i) => ({
-      rank: i + 1,
-      asin: p.asin,
-      title: p.title,
-      brand: p.brand ?? '',
-      price:
+    const items = rows.map(p => {
+      const price =
         p.buyboxprice != null
           ? p.buyboxprice > 1000
             ? Math.round(p.buyboxprice / 100)
             : p.buyboxprice
-          : null,
-      score: p.score ?? 0,
-      rating: p.rating,
-      reviewCount: p.reviewcount,
-      imageUrl: normalizeImageUrl(p.imageurl),
-      affiliateUrl: `https://www.amazon.co.jp/dp/${p.asin}`,
-    }));
+          : null;
+
+      return {
+        rank: p.rank,
+        asin: p.asin,
+        title: p.title,
+        brand: p.brand ?? '',
+        price,
+        score: p.score,
+        rating: p.rating,
+        reviewCount: p.reviewcount,
+        imageUrl: normalizeImageUrl(p.imageurl),
+        affiliateUrl: `https://www.amazon.co.jp/dp/${p.asin}`,
+      };
+    });
 
     return NextResponse.json(items);
   } catch (e) {
