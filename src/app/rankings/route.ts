@@ -1,5 +1,7 @@
 // healthy-site\src\app\rankings\route.ts
 
+// healthy-site\src\app\rankings\route.ts
+
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -18,6 +20,7 @@ type Row = {
   reviewcount: number | null;
   score: number | null;
   category: string | null;
+  calculated_at: string;
 };
 
 let _pool: Pool | null = null;
@@ -47,20 +50,34 @@ export async function GET(req: NextRequest) {
     const table = 'v_suppbase_score_phase1';
     let where = '';
 
-    // category 実値に合わせて曖昧一致
+    /**
+     * ✅ category 条件（実データ混在を吸収）
+     */
     if (type === 'whey') {
-      where = `WHERE category ILIKE '%whey%'`;
+      where = `
+        WHERE category ILIKE '%whey%'
+          AND category NOT ILIKE '%isolate%'
+          AND category NOT ILIKE '%wpi%'
+      `;
     } else if (type === 'soy') {
-      where = `WHERE category ILIKE '%soy%'`;
+      where = `
+        WHERE category ILIKE '%soy%'
+           OR category ILIKE '%soya%'
+      `;
     } else if (type === 'isolate') {
-      where = `WHERE category ILIKE '%isolate%' OR category ILIKE '%wpi%'`;
-    } else if (type === 'bcaa') {
-      where = `WHERE category ILIKE '%bcaa%'`;
+      where = `
+        WHERE category ILIKE '%isolate%'
+           OR category ILIKE '%wpi%'
+           OR category ILIKE '%whey isolate%'
+      `;
     }
 
+    /**
+     * 並び順
+     */
     let order = `
       ORDER BY
-        COALESCE(score,0) DESC,
+        COALESCE(score, 0) DESC,
         calculated_at DESC
     `;
 
@@ -90,7 +107,8 @@ export async function GET(req: NextRequest) {
         rating,
         reviewcount,
         score,
-        category
+        category,
+        calculated_at
       FROM ${table}
       ${where}
       ${order}
@@ -109,7 +127,7 @@ export async function GET(req: NextRequest) {
         title: p.title,
         brand: p.brand ?? '',
         price,
-        score: p.score ?? 0,
+        score: p.score ?? null,
         rating: p.rating,
         reviewCount: p.reviewcount,
         imageUrl: normalizeImageUrl(p.imageurl),

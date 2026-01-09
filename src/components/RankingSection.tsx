@@ -25,19 +25,11 @@ export default function RankingSection({
   loading?: boolean;
 }) {
   if (loading) {
-    return (
-      <p className="text-center text-gray-400 py-8">
-        ランキング読み込み中…
-      </p>
-    );
+    return <p className="text-center text-gray-400 py-8">ランキング読み込み中…</p>;
   }
 
   if (!items.length) {
-    return (
-      <p className="text-center text-gray-400 py-8">
-        データがありません
-      </p>
-    );
+    return <p className="text-center text-gray-400 py-8">データがありません</p>;
   }
 
   return (
@@ -45,15 +37,16 @@ export default function RankingSection({
       {items.map(item => (
         <div
           key={item.asin}
-          className={`p-4 rounded-xl shadow-sm flex gap-4 ${
-            item.rank === 1
-              ? 'border-2 border-yellow-400'
-              : item.rank === 2
-              ? 'border-2 border-gray-400'
-              : item.rank === 3
-              ? 'border-2 border-orange-400'
-              : 'border border-gray-200'
-          }`}
+          className={`p-4 rounded-xl shadow-sm border flex gap-4 min-h-[132px]
+            ${
+              item.rank === 1
+                ? 'border-yellow-400 border-2'
+                : item.rank === 2
+                ? 'border-gray-400 border-2'
+                : item.rank === 3
+                ? 'border-orange-400 border-2'
+                : 'border-gray-200'
+            }`}
         >
           <Image
             src={item.imageUrl || '/no-image.png'}
@@ -64,7 +57,8 @@ export default function RankingSection({
             unoptimized
           />
 
-          <div className="flex-1 flex justify-between items-end">
+          {/* 左：情報 */}
+          <div className="flex-1 flex flex-col justify-between">
             <div>
               <h3 className="text-lg font-semibold">
                 #{item.rank} {item.title}
@@ -73,42 +67,51 @@ export default function RankingSection({
               <p className="text-sm text-gray-600">{item.brand}</p>
 
               <div className="flex items-center gap-3 mt-2">
-                <span className="text-xl font-bold text-gray-900">
-                  {item.price != null
-                    ? `¥${item.price.toLocaleString()}`
-                    : '―'}
+                <span className="text-xl font-bold">
+                  {item.price != null ? `¥${item.price.toLocaleString()}` : '―'}
                 </span>
 
                 <span
-                  className={`px-2 py-0.5 rounded-full text-sm font-semibold ${
-                    (item.score ?? 0) >= 80
-                      ? 'bg-green-100 text-green-700'
-                      : (item.score ?? 0) >= 65
-                      ? 'bg-yellow-100 text-yellow-700'
-                      : 'bg-gray-100 text-gray-600'
-                  }`}
+                  className={`px-2 py-0.5 rounded-full text-sm font-semibold
+                    ${
+                      (item.score ?? 0) >= 80
+                        ? 'bg-green-100 text-green-700'
+                        : (item.score ?? 0) >= 65
+                        ? 'bg-yellow-100 text-yellow-700'
+                        : 'bg-gray-100 text-gray-600'
+                    }`}
                 >
-                  スコア {item.score}
+                  スコア {item.score ?? '―'}
                 </span>
               </div>
 
-              {item.rating != null && (
-                <div className="flex items-center gap-1 text-sm mt-1">
-                  <span className="text-yellow-500">
-                    {'★'.repeat(Math.floor(item.rating))}
+              {/* ★ レビュー表示（常に枠を出す） */}
+              <div className="flex items-center gap-1 text-sm mt-1 min-h-[20px]">
+                {item.rating != null ? (
+                  <>
+                    <span className="text-yellow-500">
+                      {'★'.repeat(Math.floor(item.rating))}
+                    </span>
+                    <span className="text-gray-500">
+                      {item.rating.toFixed(1)}（{item.reviewCount ?? 0}）
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-gray-300">
+                    ★★★★★ ―（―）
                   </span>
-                  <span className="text-gray-500">
-                    {item.rating.toFixed(1)}（{item.reviewCount ?? 0}）
-                  </span>
-                </div>
-              )}
+                )}
+              </div>
             </div>
+          </div>
 
+          {/* 右：CTA（位置固定） */}
+          <div className="flex items-end">
             <a
               href={item.affiliateUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="shrink-0 inline-flex items-center justify-center
+              className="inline-flex items-center justify-center
                          rounded-md bg-green-600 px-4 py-2
                          text-white text-sm font-semibold
                          hover:bg-green-700 transition"
