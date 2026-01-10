@@ -18,20 +18,17 @@ export async function GET(req: NextRequest) {
 
     /**
      * タブごとの抽出条件
-     * - isolate(WPI): protein_type = 'wpi' のみ
-     * - soy: category = 'soy'
-     * - whey: category = 'whey' かつ WPI除外
      */
     let whereClause = '';
 
     if (type === 'isolate') {
-      // WPIタブ
+      // WPI タブ
       whereClause = `p.protein_type = 'wpi'`;
     } else if (type === 'soy') {
-      // ソイタブ
+      // ソイ タブ
       whereClause = `t.category = 'soy'`;
     } else {
-      // ホエイタブ（WPI除外）
+      // ホエイ タブ（WPI除外）
       whereClause = `
         t.category = 'whey'
         AND p.protein_type != 'wpi'
@@ -39,9 +36,9 @@ export async function GET(req: NextRequest) {
     }
 
     /**
-     * ランキング取得SQL
-     * - 最新の snapshot を1件だけ取得
-     * - snapshot が無くても表示されるよう LEFT JOIN
+     * ランキング取得 SQL
+     * - tracked_asins は LEFT JOIN（← ここが重要）
+     * - snapshot も LEFT JOIN（無くても表示）
      */
     const sql = `
       SELECT
@@ -53,7 +50,7 @@ export async function GET(req: NextRequest) {
         s.rating,
         s.review_count
       FROM products p
-      JOIN tracked_asins t ON t.asin = p.asin
+      LEFT JOIN tracked_asins t ON t.asin = p.asin
       LEFT JOIN LATERAL (
         SELECT *
         FROM product_snapshots
