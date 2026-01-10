@@ -1,9 +1,9 @@
 // healthy-site/src/app/api/ranking/route.ts
 
-export const runtime = 'nodejs';
-
 import { NextRequest, NextResponse } from 'next/server';
 import { Pool } from 'pg';
+
+export const runtime = 'nodejs';
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL!,
@@ -16,30 +16,19 @@ export async function GET(req: NextRequest) {
     const type = (sp.get('type') ?? 'whey').toLowerCase();
     const limit = Number(sp.get('limit') ?? 20);
 
-    /**
-     * タブごとの抽出条件
-     */
     let whereClause = '';
 
     if (type === 'isolate') {
-      // WPI タブ
       whereClause = `p.protein_type = 'wpi'`;
     } else if (type === 'soy') {
-      // ソイ タブ
       whereClause = `t.category = 'soy'`;
     } else {
-      // ホエイ タブ（WPI除外）
       whereClause = `
         t.category = 'whey'
         AND p.protein_type != 'wpi'
       `;
     }
 
-    /**
-     * ランキング取得 SQL
-     * - tracked_asins は LEFT JOIN（← ここが重要）
-     * - snapshot も LEFT JOIN（無くても表示）
-     */
     const sql = `
       SELECT
         p.asin,
@@ -65,21 +54,9 @@ export async function GET(req: NextRequest) {
 
     const { rows } = await pool.query(sql, [limit]);
 
-    return NextResponse.json(
-      rows.map((p, i) => ({
-        rank: i + 1,
-        asin: p.asin,
-        title: p.title,
-        brand: p.brand ?? '',
-        price: p.buybox_price,
-        rating: p.rating,
-        reviewCount: p.review_count,
-        imageUrl: p.image_url,
-        affiliateUrl: `https://www.amazon.co.jp/dp/${p.asin}`,
-      }))
-    );
+    return NextResponse.json(rows);
   } catch (e) {
-    console.error('❌ ranking api error', e);
+    console.error('ranking api error', e);
     return NextResponse.json([]);
   }
 }
