@@ -17,24 +17,31 @@ export async function GET(req: NextRequest) {
     const limit = Number(sp.get('limit') ?? 20);
 
     /**
-     * 表示タイプ → DB条件
+     * タブごとの抽出条件
+     * - isolate(WPI): protein_type = 'wpi' のみ
+     * - soy: category = 'soy'
+     * - whey: category = 'whey' かつ WPI除外
      */
-    let categoryWhere = '';
-    let proteinTypeWhere = '';
+    let whereClause = '';
 
     if (type === 'isolate') {
-      categoryWhere = `t.category = 'whey'`;
-      proteinTypeWhere = `AND p.protein_type = 'wpi'`;
+      // WPIタブ
+      whereClause = `p.protein_type = 'wpi'`;
     } else if (type === 'soy') {
-      categoryWhere = `t.category = 'soy'`;
+      // ソイタブ
+      whereClause = `t.category = 'soy'`;
     } else {
-      // whey（WPI除外）
-      categoryWhere = `t.category = 'whey'`;
-      proteinTypeWhere = `AND (p.protein_type IS NULL OR p.protein_type != 'wpi')`;
+      // ホエイタブ（WPI除外）
+      whereClause = `
+        t.category = 'whey'
+        AND p.protein_type != 'wpi'
+      `;
     }
 
     /**
-     * 最新 snapshot を使う
+     * ランキング取得SQL
+     * - 最新の snapshot を1件だけ取得
+     * - snapshot が無くても表示されるよう LEFT JOIN
      */
     const sql = `
       SELECT
@@ -47,16 +54,15 @@ export async function GET(req: NextRequest) {
         s.review_count
       FROM products p
       JOIN tracked_asins t ON t.asin = p.asin
-      JOIN LATERAL (
+      LEFT JOIN LATERAL (
         SELECT *
         FROM product_snapshots
         WHERE asin = p.asin
         ORDER BY captured_at DESC
         LIMIT 1
       ) s ON true
-      WHERE ${categoryWhere}
-      ${proteinTypeWhere}
-      ORDER BY s.buybox_price ASC NULLS LAST
+      WHERE ${whereClause}
+      ORDER BY s.captured_at DESC NULLS LAST
       LIMIT $1
     `;
 
