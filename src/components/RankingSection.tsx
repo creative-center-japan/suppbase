@@ -1,139 +1,135 @@
-// healthy-site\src\components\RankingSection.tsx
+"use client";
 
-'use client';
+import Image from "next/image";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 
-import Image from 'next/image';
-
-export type RankingItem = {
+type RankingItem = {
   rank: number;
   asin: string;
   title: string;
   brand: string;
   price: number | null;
-  score?: number | null;
-  rating?: number | null;
-  reviewCount?: number | null;
+  rating: number | null;
+  reviewCount: number | null;
   imageUrl: string | null;
   affiliateUrl: string;
 };
 
-export default function RankingSection({
-  items,
-  loading,
-}: {
-  items: RankingItem[];
-  loading?: boolean;
-}) {
-  // 読み込み中
+export default function RankingSection({ type }: { type: string }) {
+  const [items, setItems] = useState<RankingItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    setError(false);
+
+    fetch(`/api/ranking?type=${type}`)
+      .then((res) => res.json())
+      .then((data) => {
+        setItems(data);
+        setLoading(false);
+      })
+      .catch(() => {
+        setError(true);
+        setLoading(false);
+      });
+  }, [type]);
+
   if (loading) {
     return (
-      <div className="text-center text-gray-500 py-12 space-y-2">
-        <p className="text-base font-medium">
-          ランキングを準備しています
-        </p>
-        <p className="text-sm">
-          データを集計中です。少しだけお待ちください。
-        </p>
+      <div className="text-center text-gray-500 py-12">
+        データを読み込み中です。少しお待ちください…
       </div>
     );
   }
 
-  // データなし
-  if (!items.length) {
+  if (error || items.length === 0) {
     return (
-      <p className="text-center text-gray-400 py-8">
+      <div className="text-center text-gray-500 py-12">
         表示できるデータがありません。
-      </p>
+      </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      {items.map(item => (
-        <div
-          key={item.asin}
-          className={`p-4 rounded-xl shadow-sm border flex gap-4 min-h-[132px]
-            ${
-              item.rank === 1
-                ? 'border-yellow-400 border-2'
-                : item.rank === 2
-                ? 'border-gray-400 border-2'
-                : item.rank === 3
-                ? 'border-orange-400 border-2'
-                : 'border-gray-200'
-            }`}
-        >
-          {/* 画像 */}
-          <Image
-            src={item.imageUrl || '/no-image.png'}
-            alt={item.title}
-            width={96}
-            height={96}
-            className="object-contain rounded bg-gray-50"
-            unoptimized
-          />
+    <div className="space-y-6">
+      {items.map((item) => {
+        // 👇 画像フォールバック（超重要）
+        const imageSrc =
+          item.imageUrl ??
+          `https://images-na.ssl-images-amazon.com/images/P/${item.asin}.jpg`;
 
-          {/* 情報 */}
-          <div className="flex-1 flex flex-col justify-between">
-            <div>
-              <h3 className="text-lg font-semibold">
-                #{item.rank} {item.title}
+        // 👇 順位カラー
+        const rankColor =
+          item.rank === 1
+            ? "bg-yellow-400"
+            : item.rank === 2
+            ? "bg-gray-400"
+            : item.rank === 3
+            ? "bg-orange-400"
+            : "bg-green-600";
+
+        return (
+          <div
+            key={item.asin}
+            className="flex gap-4 border rounded-xl p-4 items-center"
+          >
+            {/* ランク */}
+            <div
+              className={`text-white font-bold text-lg w-10 h-10 flex items-center justify-center rounded-full ${rankColor}`}
+            >
+              {item.rank}
+            </div>
+
+            {/* 画像 */}
+            <div className="w-20 h-20 relative flex-shrink-0">
+              <Image
+                src={imageSrc}
+                alt={item.title}
+                fill
+                className="object-contain rounded"
+              />
+            </div>
+
+            {/* 情報 */}
+            <div className="flex-1">
+              <h3 className="font-semibold text-sm leading-snug mb-1">
+                {item.title}
               </h3>
+              <p className="text-xs text-gray-500 mb-1">{item.brand}</p>
 
-              <p className="text-sm text-gray-600">{item.brand}</p>
-
-              <div className="flex items-center gap-3 mt-2">
-                <span className="text-xl font-bold">
-                  {item.price != null
-                    ? `¥${item.price.toLocaleString()}`
-                    : '―'}
-                </span>
-
-                {/* スコア（未実装なので集計中表示） */}
-                <span
-                  className="px-2 py-0.5 rounded-full text-sm font-semibold
-                             bg-gray-100 text-gray-500"
-                >
-                  スコア 集計中
-                </span>
+              <div className="text-sm">
+                {item.price !== null ? (
+                  <span className="font-bold">¥{item.price.toLocaleString()}</span>
+                ) : (
+                  <span className="text-gray-400">価格取得中</span>
+                )}
               </div>
 
-              {/* レビュー */}
-              <div className="flex items-center gap-1 text-sm mt-1 min-h-[20px]">
-                {item.rating != null ? (
+              <div className="text-xs text-gray-500 mt-1">
+                {item.rating !== null ? (
                   <>
-                    <span className="text-yellow-500">
-                      {'★'.repeat(Math.floor(item.rating))}
-                    </span>
-                    <span className="text-gray-500">
-                      {item.rating.toFixed(1)}（{item.reviewCount ?? 0}）
-                    </span>
+                    ★ {item.rating}（{item.reviewCount ?? 0}件）
                   </>
                 ) : (
-                  <span className="text-gray-400">
-                    レビュー情報 取得中
-                  </span>
+                  <>レビュー情報 取得中</>
                 )}
               </div>
             </div>
-          </div>
 
-          {/* CTA */}
-          <div className="flex items-end">
-            <a
+            {/* Amazon */}
+            <Link
               href={item.affiliateUrl}
               target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center justify-center
-                         rounded-md bg-green-600 px-4 py-2
-                         text-white text-sm font-semibold
-                         hover:bg-green-700 transition"
+              className="bg-green-600 text-white px-4 py-2 rounded-md text-sm whitespace-nowrap"
             >
               Amazonで見る
-            </a>
+            </Link>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
