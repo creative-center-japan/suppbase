@@ -2,7 +2,9 @@ export default function AboutPage() {
   return (
     <main className="max-w-3xl mx-auto px-6 py-16 space-y-12">
       <section>
-        <h1 className="text-4xl font-bold text-green-700 mb-4">SuppBaseとは</h1>
+        <h1 className="text-4xl font-bold text-green-700 mb-4">
+          SuppBaseとは
+        </h1>
         <p className="text-gray-700 leading-relaxed text-lg">
           SuppBaseは、プロテイン・サプリメントに関する情報を整理・比較しながら、
           「いまどんな商品が注目されているのか」を把握しやすくするための
@@ -24,48 +26,52 @@ export default function AboutPage() {
         </ul>
       </section>
 
-      {/* ★ ここから差し替え */}
-      <section>
+      {/* ★ ランキング説明 */}
+      <section id="ranking">
         <h2 className="text-2xl font-semibold text-green-700 mb-2">
-          ランキングの見方について
+          SuppBaseスコアについて
         </h2>
 
-        <p className="text-gray-700 mb-4 text-lg">
-          SuppBaseのランキングは、実際の「購入数」や「売上金額」を直接集計したものではありません。
-          Amazonではそうした数値は公開されていないため、
-          公開されているデータをもとに、商品の動きや注目度を整理しています。
+        <p className="text-gray-700 leading-relaxed mb-4 text-lg">
+          SuppBaseでは、Keepaが取得しているAmazonの公開データをもとに、
+          世の中で注目されている商品や、最近よく動いている商品の傾向を
+          分かりやすく整理しています。
         </p>
 
         <p className="text-gray-700 leading-relaxed mb-4">
-          ランキングの算出には、Keepaが取得しているAmazonの公開情報
-          （売れ筋ランキングの推移、価格の変化、レビュー情報など）を主に利用しています。
-          「最近よく動いている商品」や「相対的に注目されていそうな商品」を
-          見つけやすくするための参考指標、というイメージです。
+          売れ筋ランキングの推移や価格の変化、レビュー情報などを組み合わせることで、
+          「最近よく見かける商品」や
+          「いま選ばれていそうな商品」を
+          見つけやすくするための指標としてご覧いただけます。
         </p>
 
         <div className="bg-gray-100 p-4 rounded text-sm leading-relaxed">
-          ・売れ筋ランキングの位置や変動：人気の傾向を見るための目安<br />
-          ・価格の変化：値下げや価格の動きがあった商品を把握するための情報<br />
-          ・レビュー情報：件数や評価の傾向を、補助的な判断材料として参照
+          ・売れ筋ランキングの位置や変動：人気の流れを把握するための目安<br />
+          ・価格の変化：値下げや価格の動きがあった商品を見つけるための情報<br />
+          ・レビュー情報：評価や件数の傾向を、判断材料のひとつとして参照
         </div>
 
         <p className="text-gray-700 mt-4">
           これらの情報をもとに表示しているランキングやスコアは、
-          「どの商品が良いか」を断定するものではありません。
-          あくまで、商品選びのヒントとして
+          世の中で注目されていたり、実際によく見られている商品を
+          ランキング形式で分かりやすく整理したものです。
+          <br />
+          商品選びのきっかけとして、
           「ちょっと見てみようかな」と思える材料を提供することを目的としています。
         </p>
 
         <p className="text-gray-700 mt-2">
-          なお、タイミングによっては価格情報が取得できない場合があります。
-          その際は、過去の取得データなどを参考表示することがありますので、
+          なお、取得タイミングやデータ状況によっては、
+          一部の価格やレビュー情報が表示されない場合があります。
+          その際は、過去に取得したデータを参考として表示することがありますので、
           あらかじめご了承ください。
         </p>
       </section>
-      {/* ★ 差し替えここまで */}
 
       <section>
-        <h2 className="text-2xl font-semibold text-green-700 mb-2">運営について</h2>
+        <h2 className="text-2xl font-semibold text-green-700 mb-2">
+          運営について
+        </h2>
         <p className="text-gray-700 leading-relaxed text-lg">
           SuppBaseは、筋トレが好きでデータを見るのも好きな個人が、
           趣味と実益を兼ねて運営しているパーソナルプロジェクトです。
@@ -81,14 +87,18 @@ export default function AboutPage() {
           プライバシー・ポリシーと免責事項
         </h2>
 
-        <h3 className="text-xl font-bold mt-6 mb-1">Amazonアソシエイトについて</h3>
+        <h3 className="text-xl font-bold mt-6 mb-1">
+          Amazonアソシエイトについて
+        </h3>
         <p className="text-gray-700 mb-2">
           当サイトは、Amazon.co.jpを宣伝しリンクすることによって、
           紹介料を獲得できるアフィリエイトプログラム
           「Amazonアソシエイト・プログラム」の参加者です。
         </p>
 
-        <h3 className="text-xl font-bold mt-6 mb-1">免責事項</h3>
+        <h3 className="text-xl font-bold mt-6 mb-1">
+          免責事項
+        </h3>
         <p className="text-gray-700">
           掲載している情報は、正確性や効果を保証するものではありません。
           商品の選択・購入については、
