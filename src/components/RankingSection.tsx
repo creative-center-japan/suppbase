@@ -1,10 +1,12 @@
-"use client";
+'use client';
 
-import Image from "next/image";
-import Link from "next/link";
-import { useEffect, useState } from "react";
+import Image from 'next/image';
+import Link from 'next/link';
 
-type RankingItem = {
+/**
+ * ランキング表示用の型
+ */
+export type RankingItem = {
   rank: number;
   asin: string;
   title: string;
@@ -16,27 +18,12 @@ type RankingItem = {
   affiliateUrl: string;
 };
 
-export default function RankingSection({ type }: { type: string }) {
-  const [items, setItems] = useState<RankingItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+type Props = {
+  items: RankingItem[];
+  loading?: boolean;
+};
 
-  useEffect(() => {
-    setLoading(true);
-    setError(false);
-
-    fetch(`/api/ranking?type=${type}`)
-      .then((res) => res.json())
-      .then((data) => {
-        setItems(data);
-        setLoading(false);
-      })
-      .catch(() => {
-        setError(true);
-        setLoading(false);
-      });
-  }, [type]);
-
+export default function RankingSection({ items, loading }: Props) {
   if (loading) {
     return (
       <div className="text-center text-gray-500 py-12">
@@ -45,7 +32,7 @@ export default function RankingSection({ type }: { type: string }) {
     );
   }
 
-  if (error || items.length === 0) {
+  if (!items || items.length === 0) {
     return (
       <div className="text-center text-gray-500 py-12">
         表示できるデータがありません。
@@ -56,20 +43,20 @@ export default function RankingSection({ type }: { type: string }) {
   return (
     <div className="space-y-6">
       {items.map((item) => {
-        // 👇 画像フォールバック（超重要）
+        // 画像フォールバック（DBに無い場合）
         const imageSrc =
           item.imageUrl ??
           `https://images-na.ssl-images-amazon.com/images/P/${item.asin}.jpg`;
 
-        // 👇 順位カラー
+        // 順位カラー
         const rankColor =
           item.rank === 1
-            ? "bg-yellow-400"
+            ? 'bg-yellow-400'
             : item.rank === 2
-            ? "bg-gray-400"
+            ? 'bg-gray-400'
             : item.rank === 3
-            ? "bg-orange-400"
-            : "bg-green-600";
+            ? 'bg-orange-400'
+            : 'bg-green-600';
 
         return (
           <div
@@ -102,7 +89,9 @@ export default function RankingSection({ type }: { type: string }) {
 
               <div className="text-sm">
                 {item.price !== null ? (
-                  <span className="font-bold">¥{item.price.toLocaleString()}</span>
+                  <span className="font-bold">
+                    ¥{item.price.toLocaleString()}
+                  </span>
                 ) : (
                   <span className="text-gray-400">価格取得中</span>
                 )}
