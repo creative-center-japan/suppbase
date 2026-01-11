@@ -13,7 +13,7 @@ export default function SupplementRankingPage() {
   useEffect(() => {
     setLoading(true);
 
-    fetch('/api/ranking?type=supplement&sort=score', { cache: 'no-store' })
+    fetch('/api/ranking?type=supplement', { cache: 'no-store' })
       .then(res => res.json())
       .then(data => {
         setItems(Array.isArray(data.items) ? data.items : []);
@@ -33,9 +33,17 @@ export default function SupplementRankingPage() {
       </h1>
 
       {description && (
-        <p className="text-sm text-gray-600 mb-4 text-center">
-          {description}
-        </p>
+        <div className="text-center mb-6 space-y-2">
+          <p className="text-sm text-gray-600">
+            {description}
+          </p>
+          <a
+            href="/about#ranking"
+            className="inline-block text-sm text-green-700 font-medium hover:underline"
+          >
+            スコアについて詳しく見る →
+          </a>
+        </div>
       )}
 
       <RankingSection items={items} loading={loading} />

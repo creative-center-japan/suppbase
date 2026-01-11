@@ -22,7 +22,7 @@ export default function ProteinRankingPage() {
   useEffect(() => {
     setLoading(true);
 
-    fetch(`/api/ranking?type=${activeTab}&sort=score`, { cache: 'no-store' })
+    fetch(`/api/ranking?type=${activeTab}`, { cache: 'no-store' })
       .then(res => res.json())
       .then(data => {
         setItems(Array.isArray(data.items) ? data.items : []);
@@ -41,6 +41,7 @@ export default function ProteinRankingPage() {
         プロテイン ランキング
       </h1>
 
+      {/* タブ */}
       <div className="flex justify-center mb-4 gap-2">
         {tabs.map(tab => (
           <button
@@ -57,10 +58,19 @@ export default function ProteinRankingPage() {
         ))}
       </div>
 
+      {/* 説明＋リンク */}
       {description && (
-        <p className="text-sm text-gray-600 mb-4 text-center">
-          {description}
-        </p>
+        <div className="text-center mb-6 space-y-2">
+          <p className="text-sm text-gray-600">
+            {description}
+          </p>
+          <a
+            href="/about#ranking"
+            className="inline-block text-sm text-green-700 font-medium hover:underline"
+          >
+            スコアについて詳しく見る →
+          </a>
+        </div>
       )}
 
       <RankingSection items={items} loading={loading} />

@@ -24,17 +24,21 @@ export default function RankingSection({
   items: RankingItem[];
   loading?: boolean;
 }) {
-  // ★ 読み込み中表示（文言をやさしく）
+  // 読み込み中
   if (loading) {
     return (
-      <div className="text-center text-gray-500 py-10 space-y-2">
-        <p>ランキングを読み込んでいます。</p>
-        <p className="text-sm">しばらくお待ちください。</p>
+      <div className="text-center text-gray-500 py-12 space-y-2">
+        <p className="text-base font-medium">
+          ランキングを準備しています
+        </p>
+        <p className="text-sm">
+          データを集計中です。少しだけお待ちください。
+        </p>
       </div>
     );
   }
 
-  // ★ データなし
+  // データなし
   if (!items.length) {
     return (
       <p className="text-center text-gray-400 py-8">
@@ -59,17 +63,17 @@ export default function RankingSection({
                 : 'border-gray-200'
             }`}
         >
-          {/* 左：画像 */}
+          {/* 画像 */}
           <Image
             src={item.imageUrl || '/no-image.png'}
             alt={item.title}
             width={96}
             height={96}
-            className="object-contain rounded"
+            className="object-contain rounded bg-gray-50"
             unoptimized
           />
 
-          {/* 中央：情報 */}
+          {/* 情報 */}
           <div className="flex-1 flex flex-col justify-between">
             <div>
               <h3 className="text-lg font-semibold">
@@ -85,23 +89,16 @@ export default function RankingSection({
                     : '―'}
                 </span>
 
-                {item.score != null && (
-                  <span
-                    className={`px-2 py-0.5 rounded-full text-sm font-semibold
-                      ${
-                        item.score >= 80
-                          ? 'bg-green-100 text-green-700'
-                          : item.score >= 65
-                          ? 'bg-yellow-100 text-yellow-700'
-                          : 'bg-gray-100 text-gray-600'
-                      }`}
-                  >
-                    スコア {item.score}
-                  </span>
-                )}
+                {/* スコア（未実装なので集計中表示） */}
+                <span
+                  className="px-2 py-0.5 rounded-full text-sm font-semibold
+                             bg-gray-100 text-gray-500"
+                >
+                  スコア 集計中
+                </span>
               </div>
 
-              {/* レビュー表示 */}
+              {/* レビュー */}
               <div className="flex items-center gap-1 text-sm mt-1 min-h-[20px]">
                 {item.rating != null ? (
                   <>
@@ -113,15 +110,15 @@ export default function RankingSection({
                     </span>
                   </>
                 ) : (
-                  <span className="text-gray-300">
-                    ★★★★★ ―（―）
+                  <span className="text-gray-400">
+                    レビュー情報 取得中
                   </span>
                 )}
               </div>
             </div>
           </div>
 
-          {/* 右：CTA */}
+          {/* CTA */}
           <div className="flex items-end">
             <a
               href={item.affiliateUrl}
