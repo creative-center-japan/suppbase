@@ -3,10 +3,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import RankingSection, { RankingItem } from '@/components/RankingSection';
+import RankingSection from '@/components/RankingSection';
 
 export default function SupplementRankingPage() {
-  const [items, setItems] = useState<RankingItem[]>([]);
+  const [items, setItems] = useState<any[]>([]);
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(true);
 
@@ -27,19 +27,19 @@ export default function SupplementRankingPage() {
   }, []);
 
   return (
-    <main className="max-w-4xl mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-4 text-center">
+    <main className="max-w-5xl mx-auto px-4 py-10">
+      <h1 className="text-3xl font-bold mb-6 text-center">
         サプリメント ランキング
       </h1>
 
       {description && (
-        <div className="text-center mb-6 space-y-2">
+        <div className="text-center mb-8 space-y-2">
           <p className="text-sm text-gray-600">
             {description}
           </p>
           <a
-            href="/about#ranking"
-            className="inline-block text-sm text-green-700 font-medium hover:underline"
+            href="/about#score"
+            className="inline-block text-sm font-semibold text-green-700 hover:text-green-800 underline underline-offset-4"
           >
             スコアについて詳しく見る →
           </a>

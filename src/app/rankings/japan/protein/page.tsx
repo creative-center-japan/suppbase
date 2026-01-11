@@ -3,7 +3,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import RankingSection, { RankingItem } from '@/components/RankingSection';
+import RankingSection from '@/components/RankingSection';
 
 type ProteinTab = 'whey' | 'soy' | 'isolate';
 
@@ -15,7 +15,7 @@ const tabs: { id: ProteinTab; label: string }[] = [
 
 export default function ProteinRankingPage() {
   const [activeTab, setActiveTab] = useState<ProteinTab>('whey');
-  const [items, setItems] = useState<RankingItem[]>([]);
+  const [items, setItems] = useState<any[]>([]);
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(true);
 
@@ -36,13 +36,13 @@ export default function ProteinRankingPage() {
   }, [activeTab]);
 
   return (
-    <main className="max-w-4xl mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-4 text-center">
+    <main className="max-w-5xl mx-auto px-4 py-10">
+      <h1 className="text-3xl font-bold mb-6 text-center">
         プロテイン ランキング
       </h1>
 
       {/* タブ */}
-      <div className="flex justify-center mb-4 gap-2">
+      <div className="flex justify-center mb-6 gap-2">
         {tabs.map(tab => (
           <button
             key={tab.id}
@@ -60,13 +60,13 @@ export default function ProteinRankingPage() {
 
       {/* 説明＋リンク */}
       {description && (
-        <div className="text-center mb-6 space-y-2">
+        <div className="text-center mb-8 space-y-2">
           <p className="text-sm text-gray-600">
             {description}
           </p>
           <a
-            href="/about#ranking"
-            className="inline-block text-sm text-green-700 font-medium hover:underline"
+            href="/about#score"
+            className="inline-block text-sm font-semibold text-green-700 hover:text-green-800 underline underline-offset-4"
           >
             スコアについて詳しく見る →
           </a>
