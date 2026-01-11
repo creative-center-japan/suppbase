@@ -10,7 +10,7 @@ export type RankingItem = {
   title: string;
   brand: string;
   price: number | null;
-  score: number | null;
+  score?: number | null;
   rating?: number | null;
   reviewCount?: number | null;
   imageUrl: string | null;
@@ -24,12 +24,23 @@ export default function RankingSection({
   items: RankingItem[];
   loading?: boolean;
 }) {
+  // ★ 読み込み中表示（文言をやさしく）
   if (loading) {
-    return <p className="text-center text-gray-400 py-8">ランキング読み込み中…</p>;
+    return (
+      <div className="text-center text-gray-500 py-10 space-y-2">
+        <p>ランキングを読み込んでいます。</p>
+        <p className="text-sm">しばらくお待ちください。</p>
+      </div>
+    );
   }
 
+  // ★ データなし
   if (!items.length) {
-    return <p className="text-center text-gray-400 py-8">データがありません</p>;
+    return (
+      <p className="text-center text-gray-400 py-8">
+        表示できるデータがありません。
+      </p>
+    );
   }
 
   return (
@@ -48,6 +59,7 @@ export default function RankingSection({
                 : 'border-gray-200'
             }`}
         >
+          {/* 左：画像 */}
           <Image
             src={item.imageUrl || '/no-image.png'}
             alt={item.title}
@@ -57,7 +69,7 @@ export default function RankingSection({
             unoptimized
           />
 
-          {/* 左：情報 */}
+          {/* 中央：情報 */}
           <div className="flex-1 flex flex-col justify-between">
             <div>
               <h3 className="text-lg font-semibold">
@@ -68,24 +80,28 @@ export default function RankingSection({
 
               <div className="flex items-center gap-3 mt-2">
                 <span className="text-xl font-bold">
-                  {item.price != null ? `¥${item.price.toLocaleString()}` : '―'}
+                  {item.price != null
+                    ? `¥${item.price.toLocaleString()}`
+                    : '―'}
                 </span>
 
-                <span
-                  className={`px-2 py-0.5 rounded-full text-sm font-semibold
-                    ${
-                      (item.score ?? 0) >= 80
-                        ? 'bg-green-100 text-green-700'
-                        : (item.score ?? 0) >= 65
-                        ? 'bg-yellow-100 text-yellow-700'
-                        : 'bg-gray-100 text-gray-600'
-                    }`}
-                >
-                  スコア {item.score ?? '―'}
-                </span>
+                {item.score != null && (
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-sm font-semibold
+                      ${
+                        item.score >= 80
+                          ? 'bg-green-100 text-green-700'
+                          : item.score >= 65
+                          ? 'bg-yellow-100 text-yellow-700'
+                          : 'bg-gray-100 text-gray-600'
+                      }`}
+                  >
+                    スコア {item.score}
+                  </span>
+                )}
               </div>
 
-              {/* ★ レビュー表示（常に枠を出す） */}
+              {/* レビュー表示 */}
               <div className="flex items-center gap-1 text-sm mt-1 min-h-[20px]">
                 {item.rating != null ? (
                   <>
@@ -105,7 +121,7 @@ export default function RankingSection({
             </div>
           </div>
 
-          {/* 右：CTA（位置固定） */}
+          {/* 右：CTA */}
           <div className="flex items-end">
             <a
               href={item.affiliateUrl}
