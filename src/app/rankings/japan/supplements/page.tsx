@@ -7,6 +7,7 @@ import RankingSection, { RankingItem } from '@/components/RankingSection';
 
 export default function SupplementRankingPage() {
   const [items, setItems] = useState<RankingItem[]>([]);
+  const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -17,16 +18,28 @@ export default function SupplementRankingPage() {
       { cache: 'no-store' }
     )
       .then(res => res.json())
-      .then(data => setItems(Array.isArray(data) ? data : []))
-      .catch(() => setItems([]))
+      .then(data => {
+        setItems(Array.isArray(data.items) ? data.items : []);
+        setDescription(data.description ?? '');
+      })
+      .catch(() => {
+        setItems([]);
+        setDescription('');
+      })
       .finally(() => setLoading(false));
   }, []);
 
   return (
     <main className="max-w-4xl mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-6 text-center">
+      <h1 className="text-3xl font-bold mb-4 text-center">
         サプリメント ランキング
       </h1>
+
+      {description && (
+        <p className="text-sm text-gray-600 mb-4 text-center">
+          {description}
+        </p>
+      )}
 
       <RankingSection items={items} loading={loading} />
     </main>

@@ -16,6 +16,7 @@ const tabs: { id: ProteinTab; label: string }[] = [
 export default function ProteinRankingPage() {
   const [activeTab, setActiveTab] = useState<ProteinTab>('whey');
   const [items, setItems] = useState<RankingItem[]>([]);
+  const [description, setDescription] = useState('');
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
@@ -29,8 +30,14 @@ export default function ProteinRankingPage() {
       { cache: 'no-store' }
     )
       .then(res => res.json())
-      .then(data => setItems(Array.isArray(data) ? data : []))
-      .catch(() => setItems([]))
+      .then(data => {
+        setItems(Array.isArray(data.items) ? data.items : []);
+        setDescription(data.description ?? '');
+      })
+      .catch(() => {
+        setItems([]);
+        setDescription('');
+      })
       .finally(() => setLoading(false));
   }, [activeTab]);
 
@@ -41,7 +48,7 @@ export default function ProteinRankingPage() {
       </h1>
 
       {/* タブ切り替え */}
-      <div className="flex justify-center mb-6 gap-2">
+      <div className="flex justify-center mb-4 gap-2">
         {tabs.map(tab => (
           <button
             key={tab.id}
@@ -56,6 +63,12 @@ export default function ProteinRankingPage() {
           </button>
         ))}
       </div>
+
+      {description && (
+        <p className="text-sm text-gray-600 mb-4 text-center">
+          {description}
+        </p>
+      )}
 
       <RankingSection items={items} loading={loading} />
     </main>

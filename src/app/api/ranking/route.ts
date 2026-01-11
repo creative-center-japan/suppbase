@@ -1,5 +1,7 @@
 // healthy-site/src/app/api/ranking/route.ts
 
+// src/app/api/ranking/route.ts
+
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -26,6 +28,9 @@ export async function GET(req: NextRequest) {
     } else if (type === 'soy') {
       // ソイ
       whereClause = `t.category = 'soy'`;
+    } else if (type === 'supplement') {
+      // サプリメント
+      whereClause = `t.category = 'supplement'`;
     } else {
       // ホエイ（WPI除外）
       whereClause = `
@@ -59,8 +64,18 @@ export async function GET(req: NextRequest) {
 
     const { rows } = await pool.query(sql, [limit]);
 
-    return NextResponse.json(
-      rows.map((p, i) => ({
+    const description =
+      type === 'isolate'
+        ? 'WPI（ホエイプロテイン・アイソレート）として分類された商品の中から、価格の動きや売れ筋指標などの公開情報をもとに、最近の注目度が高そうな商品を整理しています。実際の購入数を示すものではありません。'
+        : type === 'soy'
+        ? 'ソイプロテイン商品を対象に、価格の変化や売れ筋指標などの公開データをもとに整理しています。販売数そのものを表すものではなく、動きのある商品を見つけるための参考情報です。'
+        : type === 'supplement'
+        ? 'サプリメント商品を対象に、価格の変化や売れ筋指標などの公開情報をもとに整理しています。売上順や効果を保証するものではありません。'
+        : 'ホエイプロテイン商品のうちWPIを除いた商品を対象に、公開されている指標をもとに整理しています。';
+
+    return NextResponse.json({
+      description,
+      items: rows.map((p, i) => ({
         rank: i + 1,
         asin: p.asin,
         title: p.title,
@@ -70,11 +85,14 @@ export async function GET(req: NextRequest) {
         reviewCount: p.review_count,
         imageUrl: p.image_url,
         affiliateUrl: `https://www.amazon.co.jp/dp/${p.asin}`,
-      }))
-    );
+      })),
+    });
   } catch (e) {
     console.error('ranking api error', e);
-    return NextResponse.json([]);
+    return NextResponse.json({
+      description:
+        'ランキング情報の取得に失敗しました。時間をおいて再度お試しください。',
+      items: [],
+    });
   }
 }
-
