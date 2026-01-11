@@ -1,7 +1,5 @@
 // healthy-site/src/app/api/ranking/route.ts
 
-// src/app/api/ranking/route.ts
-
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -33,21 +31,18 @@ export async function GET(req: NextRequest) {
       `;
     }
 
-    // NOTE:
-    // - products: imageUrl（キャメル）を想定
-    // - product_snapshots: buyBoxPrice / reviewCount（キャメル）を想定
-    // - もし snake_case の列なら COALESCE 側で拾う（ただし列自体が存在しないとSQLは失敗します）
     const sql = `
       SELECT
         p.asin,
         p.title,
         p.brand,
-        p."imageUrl" AS image_url,
-        COALESCE(s."buyBoxPrice", s.buybox_price) AS buybox_price,
-        COALESCE(s.rating, s."rating") AS rating,
-        COALESCE(s."reviewCount", s.review_count) AS review_count
+        p."imageUrl"        AS image_url,
+        s.buybox_price     AS buybox_price,
+        s.rating           AS rating,
+        s.review_count     AS review_count
       FROM products p
-      LEFT JOIN tracked_asins t ON t.asin = p.asin
+      LEFT JOIN tracked_asins t
+        ON t.asin = p.asin
       LEFT JOIN LATERAL (
         SELECT *
         FROM product_snapshots
@@ -56,7 +51,7 @@ export async function GET(req: NextRequest) {
         LIMIT 1
       ) s ON true
       WHERE ${whereClause}
-      ORDER BY captured_at DESC NULLS LAST
+      ORDER BY s.captured_at DESC NULLS LAST
       LIMIT $1
     `;
 
@@ -66,9 +61,9 @@ export async function GET(req: NextRequest) {
       type === 'isolate'
         ? 'WPI（ホエイプロテイン・アイソレート）として分類された商品の中から、公開データ（価格の動き・売れ筋指標・レビュー情報など）をもとに整理しています。実際の購入数を示すものではありません。'
         : type === 'soy'
-        ? 'ソイプロテイン商品を対象に、公開データ（価格の動き・売れ筋指標・レビュー情報など）をもとに整理しています。売上数そのものを表すものではありません。'
+        ? 'ソイプロテイン商品を対象に、公開データ（価格の動き・売れ筋指標・レビュー情報など）をもとに整理しています。'
         : type === 'supplement'
-        ? 'サプリメント商品を対象に、公開データ（価格の動き・売れ筋指標・レビュー情報など）をもとに整理しています。売上順や効果を保証するものではありません。'
+        ? 'サプリメント商品を対象に、公開データ（価格の動き・売れ筋指標・レビュー情報など）をもとに整理しています。'
         : 'ホエイプロテイン商品のうちWPIを除いた商品を対象に、公開データをもとに整理しています。';
 
     return NextResponse.json({
@@ -81,15 +76,15 @@ export async function GET(req: NextRequest) {
         price: p.buybox_price,
         rating: p.rating,
         reviewCount: p.review_count,
-        imageUrl: p.image_url ?? null,
+        imageUrl: p.image_url,
         affiliateUrl: `https://www.amazon.co.jp/dp/${p.asin}`,
       })),
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    // DBのパスワード等は出さない。SQL/カラム不一致のヒントだけ。
     return NextResponse.json({
-      description: 'ランキング情報の取得に失敗しました。時間をおいて再度お試しください。',
+      description:
+        'ランキング情報の取得に失敗しました。時間をおいて再度お試しください。',
       items: [],
       errorHint: msg,
     });

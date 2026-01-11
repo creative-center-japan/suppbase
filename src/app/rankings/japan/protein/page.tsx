@@ -17,18 +17,12 @@ export default function ProteinRankingPage() {
   const [activeTab, setActiveTab] = useState<ProteinTab>('whey');
   const [items, setItems] = useState<RankingItem[]>([]);
   const [description, setDescription] = useState('');
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
 
-    fetch(
-      new URL(
-        `/api/ranking?type=${activeTab}&sort=score`,
-        window.location.origin
-      ),
-      { cache: 'no-store' }
-    )
+    fetch(`/api/ranking?type=${activeTab}&sort=score`, { cache: 'no-store' })
       .then(res => res.json())
       .then(data => {
         setItems(Array.isArray(data.items) ? data.items : []);
@@ -43,11 +37,10 @@ export default function ProteinRankingPage() {
 
   return (
     <main className="max-w-4xl mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-6 text-center">
+      <h1 className="text-3xl font-bold mb-4 text-center">
         プロテイン ランキング
       </h1>
 
-      {/* タブ切り替え */}
       <div className="flex justify-center mb-4 gap-2">
         {tabs.map(tab => (
           <button

@@ -13,10 +13,7 @@ export default function SupplementRankingPage() {
   useEffect(() => {
     setLoading(true);
 
-    fetch(
-      new URL('/api/ranking?type=supplement&sort=score', window.location.origin),
-      { cache: 'no-store' }
-    )
+    fetch('/api/ranking?type=supplement&sort=score', { cache: 'no-store' })
       .then(res => res.json())
       .then(data => {
         setItems(Array.isArray(data.items) ? data.items : []);
