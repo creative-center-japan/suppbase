@@ -2,7 +2,7 @@ name: Keepa Collect BCAA ASINs
 
 on:
   schedule:
-    - cron: "40 18 * * *"  # JST 03:40
+   - cron: "40 18 * * *"  # JST 03:40
   workflow_dispatch:
 
 jobs:
