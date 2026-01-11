@@ -7,6 +7,18 @@ import RankingSection from '@/components/RankingSection';
 
 type ProteinTab = 'whey' | 'soy' | 'isolate';
 
+type RankingItemLite = {
+  rank: number;
+  asin: string;
+  title: string;
+  brand: string;
+  price: number | null;
+  rating: number | null;
+  reviewCount: number | null;
+  imageUrl: string | null;
+  affiliateUrl: string;
+};
+
 const tabs: { id: ProteinTab; label: string }[] = [
   { id: 'whey', label: 'ホエイ' },
   { id: 'soy', label: 'ソイ' },
@@ -15,7 +27,7 @@ const tabs: { id: ProteinTab; label: string }[] = [
 
 export default function ProteinRankingPage() {
   const [activeTab, setActiveTab] = useState<ProteinTab>('whey');
-  const [items, setItems] = useState<any[]>([]);
+  const [items, setItems] = useState<RankingItemLite[]>([]);
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(true);
 
@@ -58,15 +70,12 @@ export default function ProteinRankingPage() {
         ))}
       </div>
 
-      {/* 説明＋リンク */}
       {description && (
         <div className="text-center mb-8 space-y-2">
-          <p className="text-sm text-gray-600">
-            {description}
-          </p>
+          <p className="text-sm text-gray-600">{description}</p>
           <a
             href="/about#score"
-            className="inline-block text-sm font-semibold text-green-700 hover:text-green-800 underline underline-offset-4"
+            className="inline-flex items-center gap-1 text-sm font-semibold text-green-700 hover:text-green-800 underline underline-offset-4"
           >
             スコアについて詳しく見る →
           </a>
