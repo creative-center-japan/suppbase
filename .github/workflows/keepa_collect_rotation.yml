@@ -1,9 +1,9 @@
-name: Keepa Collect Rotation
+name: Keepa Collect Rotation (Plan20)
 
 on:
   schedule:
-    # JST 03:40（UTC 18:40）
-    - cron: "40 18 * * *"
+    # 10分ごとに実行
+    - cron: "*/10 * * * *"
   workflow_dispatch:
 
 jobs:
@@ -12,24 +12,40 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install requests supabase
+          pip install -r requirements.txt
 
-      - name: Fetch product details from Supabase & Keepa
+      - name: Decide category by minute
+        id: category
+        run: |
+          MIN=$(date +'%M')
+          MOD=$((10#$MIN / 10))
+
+          if [ "$MOD" -eq 0 ] || [ "$MOD" -eq 4 ]; then
+            echo "CATEGORY=whey" >> $GITHUB_OUTPUT
+          elif [ "$MOD" -eq 1 ] || [ "$MOD" -eq 5 ]; then
+            echo "CATEGORY=soy" >> $GITHUB_OUTPUT
+          elif [ "$MOD" -eq 2 ]; then
+            echo "CATEGORY=isolate" >> $GITHUB_OUTPUT
+          else
+            echo "CATEGORY=supplement" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Fetch product details from Keepa
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
-          MAX_PER_RUN: "60"
+          TARGET_CATEGORY: ${{ steps.category.outputs.CATEGORY }}
+          MAX_PER_RUN: "15"
         run: |
           python scripts/fetch_product_details_from_supabase.py
