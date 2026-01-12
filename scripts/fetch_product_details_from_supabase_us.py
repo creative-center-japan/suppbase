@@ -64,17 +64,17 @@ def safe_current(stats: dict, idx: int):
 # Main
 # =====================
 def main():
+    # ✅ locale 条件は付けない（JP/US 共通 ASIN）
     res = (
         supabase.table("tracked_asins")
         .select("asin")
-        .eq("locale", "us")
         .limit(MAX_PER_RUN)
         .execute()
     )
 
     asins = [r["asin"] for r in res.data]
     if not asins:
-        print("No US ASINs to process")
+        print("No ASINs to process")
         return
 
     now = datetime.now(timezone.utc).isoformat()
