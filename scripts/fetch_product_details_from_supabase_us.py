@@ -11,14 +11,14 @@ KEEPA_API_KEY = os.environ["KEEPA_API_KEY"]
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE"]
 
-DOMAIN_ID = 1  # US (amazon.com)
+DOMAIN_ID = 1  # Amazon.com (US)
 MAX_PER_RUN = int(os.environ.get("MAX_PER_RUN", "40"))
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 KEEPA_PRODUCT_API = "https://api.keepa.com/product"
 
 # =====================
-# Helper
+# Keepa fetch
 # =====================
 def fetch_keepa_product(asin: str):
     r = requests.get(
@@ -38,7 +38,7 @@ def fetch_keepa_product(asin: str):
         return None
 
     if r.status_code != 200:
-        print(f"[ERROR] HTTP {r.status_code} {asin}")
+        print(f"[ERROR] HTTP {r.status_code} → skip {asin}")
         return None
 
     products = r.json().get("products")
@@ -56,15 +56,15 @@ def safe_current(stats: dict, idx: int):
     cur = stats.get("current")
     if not cur or len(cur) <= idx:
         return None
-    val = cur[idx]
-    return val if isinstance(val, int) and val >= 0 else None
+    v = cur[idx]
+    return v if isinstance(v, int) and v >= 0 else None
 
 
 # =====================
 # Main
 # =====================
 def main():
-    # ✅ locale 条件は付けない（JP/US 共通 ASIN）
+    # ✅ JP/US 共通 tracked_asins を使用（locale 条件なし）
     res = (
         supabase.table("tracked_asins")
         .select("asin")
@@ -91,19 +91,20 @@ def main():
         if not title:
             continue
 
+        # ---------- products ----------
         upsert_products.append(
             {
                 "asin": asin,
                 "title": title,
                 "brand": product.get("brand"),
                 "imageUrl": extract_image_url(product),
-                "locale": "us",
                 "updated_at": now,
             }
         )
 
         stats = product.get("stats", {})
 
+        # ---------- product_snapshots ----------
         insert_snapshots.append(
             {
                 "asin": asin,
@@ -119,17 +120,23 @@ def main():
             }
         )
 
-        time.sleep(1)
+        time.sleep(1)  # Keepa rate safety
 
+    # =====================
+    # DB write
+    # =====================
     if upsert_products:
+        # ✅ products は asin 単独で upsert（DB 制約に一致）
         supabase.table("products").upsert(
             upsert_products,
-            on_conflict="asin,locale"
+            on_conflict="asin"
         ).execute()
         print(f"[OK] upserted {len(upsert_products)} US products")
 
     if insert_snapshots:
-        supabase.table("product_snapshots").insert(insert_snapshots).execute()
+        supabase.table("product_snapshots").insert(
+            insert_snapshots
+        ).execute()
         print(f"[OK] inserted {len(insert_snapshots)} US snapshots")
 
 
