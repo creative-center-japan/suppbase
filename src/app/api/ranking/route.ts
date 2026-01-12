@@ -11,20 +11,25 @@ const pool = new Pool({
 export async function GET(req: NextRequest) {
   try {
     const sp = new URL(req.url).searchParams;
+
     const type = (sp.get('type') ?? 'whey').toLowerCase();
+    const locale = (sp.get('locale') ?? 'jp').toLowerCase(); // ★追加
     const limit = Number(sp.get('limit') ?? 10);
 
-    let whereClause = '';
+    let whereClause = `
+      p.locale = $2
+      AND t.locale = $2
+    `;
 
     if (type === 'isolate') {
-      whereClause = `p.protein_type = 'wpi'`;
+      whereClause += ` AND p.protein_type = 'wpi'`;
     } else if (type === 'soy') {
-      whereClause = `t.category = 'soy'`;
+      whereClause += ` AND t.category = 'soy'`;
     } else if (type === 'supplement') {
-      whereClause = `t.category = 'supplement'`;
+      whereClause += ` AND t.category = 'supplement'`;
     } else {
-      whereClause = `
-        t.category = 'whey'
+      whereClause += `
+        AND t.category = 'whey'
         AND p.protein_type != 'wpi'
       `;
     }
@@ -40,14 +45,17 @@ export async function GET(req: NextRequest) {
         s.review_count       AS review_count,
         sc.score             AS score
       FROM products p
-      LEFT JOIN tracked_asins t
+      INNER JOIN tracked_asins t
         ON t.asin = p.asin
+        AND t.locale = p.locale
       LEFT JOIN latest_product_scores sc
         ON sc.asin = p.asin
+        AND sc.locale = p.locale
       LEFT JOIN LATERAL (
         SELECT *
         FROM product_snapshots
         WHERE asin = p.asin
+          AND locale = p.locale
         ORDER BY captured_at DESC
         LIMIT 1
       ) s ON true
@@ -56,11 +64,11 @@ export async function GET(req: NextRequest) {
       LIMIT $1
     `;
 
-    const { rows } = await pool.query(sql, [limit]);
+    const { rows } = await pool.query(sql, [limit, locale]);
 
     const description =
       type === 'isolate'
-        ? 'WPI（ホエイプロテイン・アイソレート）として分類された商品の中から、公開データ（価格の動き・売れ筋指標・レビュー情報など）をもとにスコア化しています。'
+        ? 'WPI（ホエイプロテイン・アイソレート）として分類された商品の中から、公開データ（売れ筋指標・価格変動・レビュー情報など）をもとにスコア化しています。'
         : type === 'soy'
         ? 'ソイプロテイン商品を対象に、公開データをもとにスコア化しています。'
         : type === 'supplement'
@@ -78,8 +86,11 @@ export async function GET(req: NextRequest) {
         rating: p.rating,
         reviewCount: p.review_count,
         imageUrl: p.image_url,
-        score: p.score, // ← ここが新規
-        affiliateUrl: `https://www.amazon.co.jp/dp/${p.asin}`,
+        score: p.score,
+        affiliateUrl:
+          locale === 'us'
+            ? `https://www.amazon.com/dp/${p.asin}`
+            : `https://www.amazon.co.jp/dp/${p.asin}`,
       })),
     });
   } catch (e) {
