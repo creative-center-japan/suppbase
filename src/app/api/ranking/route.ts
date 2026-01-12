@@ -1,5 +1,3 @@
-// healthy-site/src/app/api/ranking/route.ts
-
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -14,7 +12,7 @@ export async function GET(req: NextRequest) {
   try {
     const sp = new URL(req.url).searchParams;
     const type = (sp.get('type') ?? 'whey').toLowerCase();
-    const limit = Number(sp.get('limit') ?? 20);
+    const limit = Number(sp.get('limit') ?? 10);
 
     let whereClause = '';
 
@@ -36,13 +34,16 @@ export async function GET(req: NextRequest) {
         p.asin,
         p.title,
         p.brand,
-        p."imageUrl"        AS image_url,
-        s.buybox_price     AS buybox_price,
-        s.rating           AS rating,
-        s.review_count     AS review_count
+        p."imageUrl"          AS image_url,
+        s.buybox_price       AS buybox_price,
+        s.rating             AS rating,
+        s.review_count       AS review_count,
+        sc.score             AS score
       FROM products p
       LEFT JOIN tracked_asins t
         ON t.asin = p.asin
+      LEFT JOIN latest_product_scores sc
+        ON sc.asin = p.asin
       LEFT JOIN LATERAL (
         SELECT *
         FROM product_snapshots
@@ -51,7 +52,7 @@ export async function GET(req: NextRequest) {
         LIMIT 1
       ) s ON true
       WHERE ${whereClause}
-      ORDER BY s.captured_at DESC NULLS LAST
+      ORDER BY sc.score DESC NULLS LAST
       LIMIT $1
     `;
 
@@ -59,12 +60,12 @@ export async function GET(req: NextRequest) {
 
     const description =
       type === 'isolate'
-        ? 'WPI（ホエイプロテイン・アイソレート）として分類された商品の中から、公開データ（価格の動き・売れ筋指標・レビュー情報など）をもとに整理しています。実際の購入数を示すものではありません。'
+        ? 'WPI（ホエイプロテイン・アイソレート）として分類された商品の中から、公開データ（価格の動き・売れ筋指標・レビュー情報など）をもとにスコア化しています。'
         : type === 'soy'
-        ? 'ソイプロテイン商品を対象に、公開データ（価格の動き・売れ筋指標・レビュー情報など）をもとに整理しています。'
+        ? 'ソイプロテイン商品を対象に、公開データをもとにスコア化しています。'
         : type === 'supplement'
-        ? 'サプリメント商品を対象に、公開データ（価格の動き・売れ筋指標・レビュー情報など）をもとに整理しています。'
-        : 'ホエイプロテイン商品のうちWPIを除いた商品を対象に、公開データをもとに整理しています。';
+        ? 'サプリメント商品を対象に、公開データをもとにスコア化しています。'
+        : 'ホエイプロテイン商品のうちWPIを除いた商品を対象に、公開データをもとにスコア化しています。';
 
     return NextResponse.json({
       description,
@@ -77,6 +78,7 @@ export async function GET(req: NextRequest) {
         rating: p.rating,
         reviewCount: p.review_count,
         imageUrl: p.image_url,
+        score: p.score, // ← ここが新規
         affiliateUrl: `https://www.amazon.co.jp/dp/${p.asin}`,
       })),
     });
