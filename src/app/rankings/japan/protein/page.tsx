@@ -25,11 +25,20 @@ const tabs: { id: ProteinTab; label: string }[] = [
   { id: 'isolate', label: 'アイソレート（WPI）' },
 ];
 
+function getCurrentYearMonth() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+  return `${year}年${month}月`;
+}
+
 export default function ProteinRankingPage() {
   const [activeTab, setActiveTab] = useState<ProteinTab>('whey');
   const [items, setItems] = useState<RankingItemLite[]>([]);
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(true);
+
+  const yearMonth = getCurrentYearMonth();
 
   useEffect(() => {
     setLoading(true);
@@ -49,18 +58,15 @@ export default function ProteinRankingPage() {
 
   return (
     <main className="max-w-5xl mx-auto px-4 py-10">
-      {/* タイトル */}
       <h1 className="text-3xl font-bold mb-2 text-center">
-        プロテインランキング【2026年1月】
+        プロテインランキング【{yearMonth}】
       </h1>
 
-      {/* 注記（重要） */}
       <p className="text-center text-sm text-gray-500 mb-6">
         ※ 価格・在庫・レビュー情報は変動します。最新の販売価格・詳細は
         各商品リンク先の Amazon ページをご確認ください。
       </p>
 
-      {/* タブ */}
       <div className="flex justify-center mb-6 gap-2">
         {tabs.map(tab => (
           <button
@@ -77,7 +83,6 @@ export default function ProteinRankingPage() {
         ))}
       </div>
 
-      {/* 説明文 */}
       {description && (
         <div className="text-center mb-8 space-y-2">
           <p className="text-sm text-gray-600">{description}</p>

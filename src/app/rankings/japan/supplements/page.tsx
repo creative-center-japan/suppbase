@@ -17,10 +17,19 @@ type RankingItemLite = {
   affiliateUrl: string;
 };
 
+function getCurrentYearMonth() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+  return `${year}年${month}月`;
+}
+
 export default function SupplementRankingPage() {
   const [items, setItems] = useState<RankingItemLite[]>([]);
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(true);
+
+  const yearMonth = getCurrentYearMonth();
 
   useEffect(() => {
     setLoading(true);
@@ -41,10 +50,9 @@ export default function SupplementRankingPage() {
   return (
     <main className="max-w-5xl mx-auto px-4 py-10">
       <h1 className="text-3xl font-bold mb-2 text-center">
-        サプリメントランキング【2026年1月】
+        サプリメントランキング【{yearMonth}】
       </h1>
 
-      {/* 注記 */}
       <p className="text-center text-sm text-gray-500 mb-6">
         ※ 価格・在庫・レビュー情報は変動します。最新の販売価格・詳細は
         各商品リンク先の Amazon ページをご確認ください。
