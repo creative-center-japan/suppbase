@@ -1,133 +1,140 @@
 import os
 import time
-import random
 import requests
 from datetime import datetime, timezone
 from supabase import create_client
 
-# ===== ENV =====
+# =====================
+# ENV
+# =====================
 KEEPA_API_KEY = os.environ["KEEPA_API_KEY"]
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE"]
-
-# ===== Keepa 設定 =====
-DOMAIN_ID = 5  # Amazon.co.jp
-API_URL = "https://api.keepa.com/product"
-
-BATCH_SIZE = 10
-SLEEP_SEC = 30
-MAX_ASINS_PER_RUN = 100
+MAX_PER_RUN = int(os.environ.get("MAX_PER_RUN", 5))
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-def safe_sleep(sec):
-    time.sleep(sec + random.uniform(0, 3))
+KEEPA_PRODUCT_API = "https://api.keepa.com/product"
+DOMAIN_JP = 5
 
-# ===== WPI 判定 =====
-def detect_protein_type(title: str | None) -> str:
-    if not title:
-        return "unknown"
+# =====================
+# Helper
+# =====================
+def fetch_keepa_product(asin: str) -> dict | None:
+    params = {
+        "key": KEEPA_API_KEY,
+        "domain": DOMAIN_JP,
+        "asin": asin,
+        "stats": 180,
+    }
 
-    t = title.lower()
-    if (
-        "wpi" in t
-        or "アイソレート" in t
-        or "isolate" in t
-        or "isolated" in t
-    ):
-        return "wpi"
-
-    return "other"  # ホエイ（WPC含む）
-
-# ===== 対象 ASIN 取得 =====
-res = (
-    supabase.table("tracked_asins")
-    .select("asin")
-    .eq("is_active", True)
-    .order("last_seen_at", desc=True)
-    .limit(MAX_ASINS_PER_RUN)
-    .execute()
-)
-
-asins = [r["asin"] for r in (res.data or [])]
-
-if not asins:
-    print("[SKIP] no tracked asins")
-    raise SystemExit(0)
-
-now = datetime.now(timezone.utc).isoformat()
-
-product_rows = []    # products 用
-snapshot_rows = []   # product_snapshots 用
-
-# ===== Keepa fetch =====
-for i in range(0, len(asins), BATCH_SIZE):
-    batch = asins[i:i + BATCH_SIZE]
-
-    r = requests.get(
-        API_URL,
-        params={
-            "key": KEEPA_API_KEY,
-            "domain": DOMAIN_ID,
-            "asin": ",".join(batch),
-            "stats": 180,
-            "update": 1,
-            "history": 0,
-        },
-        timeout=60,
-    )
+    r = requests.get(KEEPA_PRODUCT_API, params=params, timeout=30)
 
     if r.status_code == 429:
-        print("[429] rate limited → wait 60s")
-        safe_sleep(60)
-        continue
+        print(f"[429] rate limited → skip {asin}")
+        return None
 
     r.raise_for_status()
-    products = r.json().get("products", [])
+    products = r.json().get("products")
+    return products[0] if products else None
 
-    for p in products:
-        asin = p.get("asin")
-        title = p.get("title")
-        brand = p.get("brand")
-        stats = p.get("stats") or {}
 
-        protein_type = detect_protein_type(title)
+def extract_image_url(product: dict) -> str | None:
+    images_csv = product.get("imagesCSV")
+    if not images_csv:
+        return None
+    return f"https://images-na.ssl-images-amazon.com/images/I/{images_csv.split(',')[0]}"
 
-        # --- products（マスタ＋判定結果） ---
-        product_rows.append({
+
+def safe_get_current(stats: dict, index: int):
+    cur = stats.get("current")
+    if not cur or len(cur) <= index:
+        return None
+    return cur[index]
+
+
+def extract_latest_sales_rank(product: dict) -> int | None:
+    """
+    salesRanks から最新順位を1つ取得
+    （最も深いカテゴリを優先）
+    """
+    sales_ranks = product.get("salesRanks")
+    if not sales_ranks:
+        return None
+
+    # 最後のカテゴリ（= 最も細かい）
+    last_category = list(sales_ranks.values())[-1]
+    if not last_category or len(last_category) < 2:
+        return None
+
+    return last_category[-1]
+
+
+# =====================
+# Main
+# =====================
+def main():
+    res = (
+        supabase.table("products")
+        .select("asin")
+        .order("updated_at", desc=False)
+        .limit(MAX_PER_RUN)
+        .execute()
+    )
+
+    asins = [r["asin"] for r in res.data]
+    if not asins:
+        print("No ASINs")
+        return
+
+    upsert_products = []
+    insert_snapshots = []
+
+    for asin in asins:
+        product = fetch_keepa_product(asin)
+        if not product:
+            continue
+
+        now = datetime.now(timezone.utc).isoformat()
+
+        # -------- image --------
+        image_url = extract_image_url(product)
+        if image_url:
+            upsert_products.append(
+                {
+                    "asin": asin,
+                    "imageUrl": image_url,
+                    "updated_at": now,
+                }
+            )
+
+        # -------- stats --------
+        stats = product.get("stats", {})
+        latest_rank = extract_latest_sales_rank(product)
+
+        snapshot = {
             "asin": asin,
-            "title": title,
-            "brand": brand,
-            "protein_type": protein_type,
-            "updated_at": now,
-        })
-
-        # --- product_snapshots（履歴・事実） ---
-        snapshot_rows.append({
-            "asin": asin,
-            "buybox_price": stats.get("buyBoxPrice"),  # NULL OK
-            "sales_rank": p.get("salesRank")
-                if isinstance(p.get("salesRank"), int) else None,
-            "review_count": stats.get("reviewCount"),
-            "rating": stats.get("rating"),
+            "buybox_price": stats.get("buyBoxPrice"),
+            "rating": safe_get_current(stats, 2),
+            "review_count": safe_get_current(stats, 11),
+            "sales_rank_latest": latest_rank,
+            "sales_rank_drops30": stats.get("salesRankDrops30"),
+            "sales_rank_drops90": stats.get("salesRankDrops90"),
+            "sales_rank_drops180": stats.get("salesRankDrops180"),
             "captured_at": now,
-        })
+        }
 
-    safe_sleep(SLEEP_SEC)
+        insert_snapshots.append(snapshot)
+        time.sleep(1)
 
-# ===== 保存 =====
-if product_rows:
-    supabase.table("products").upsert(
-        product_rows,
-        on_conflict="asin"
-    ).execute()
-    print(f"[OK] upserted {len(product_rows)} products")
+    if upsert_products:
+        supabase.table("products").upsert(upsert_products).execute()
+        print(f"[OK] upserted {len(upsert_products)} products")
 
-if snapshot_rows:
-    supabase.table("product_snapshots").insert(
-        snapshot_rows
-    ).execute()
-    print(f"[OK] inserted {len(snapshot_rows)} snapshots")
+    if insert_snapshots:
+        supabase.table("product_snapshots").insert(insert_snapshots).execute()
+        print(f"[OK] inserted {len(insert_snapshots)} snapshots")
 
-if not product_rows and not snapshot_rows:
-    print("[WARN] no data saved")
+
+if __name__ == "__main__":
+    main()
