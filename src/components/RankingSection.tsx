@@ -10,6 +10,7 @@ type RankingItem = {
   reviewCount: number | null;
   imageUrl: string | null;
   affiliateUrl: string;
+  score?: number | null; // ← 追加（来たら自動表示）
 };
 
 type Props = {
@@ -36,17 +37,35 @@ export default function RankingSection({ items, loading }: Props) {
     );
   }
 
-  // 10位まで
+  // 表示は10位まで
   const displayItems = items.slice(0, 10);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {displayItems.map(item => {
         const isTop1 = item.rank === 1;
         const isTop2 = item.rank === 2;
         const isTop3 = item.rank === 3;
 
-        // 順位バッジ色（金・銀・銅）
+        /* =====================
+           枠・背景スタイル
+        ===================== */
+        const borderColor = isTop1
+          ? 'border-yellow-400'
+          : isTop2
+          ? 'border-gray-300'
+          : isTop3
+          ? 'border-orange-400'
+          : 'border-gray-200';
+
+        const bgColor = isTop1
+          ? 'bg-yellow-50'
+          : isTop2
+          ? 'bg-gray-50'
+          : isTop3
+          ? 'bg-orange-50'
+          : 'bg-white';
+
         const rankBg = isTop1
           ? 'bg-yellow-400 text-yellow-900'
           : isTop2
@@ -55,7 +74,9 @@ export default function RankingSection({ items, loading }: Props) {
           ? 'bg-orange-400 text-orange-900'
           : 'bg-gray-200 text-gray-700';
 
-        // 安全な値整形
+        /* =====================
+           値の安全整形
+        ===================== */
         const hasRating =
           typeof item.rating === 'number' && item.rating >= 0;
 
@@ -73,20 +94,27 @@ export default function RankingSection({ items, loading }: Props) {
             ? `¥${item.price.toLocaleString()}`
             : '価格情報取得中';
 
+        const scoreText =
+          typeof item.score === 'number'
+            ? item.score.toLocaleString()
+            : null;
+
         return (
           <div
             key={item.asin}
-            className="flex items-center gap-4 border border-gray-200 rounded-xl p-5 bg-white"
+            className={`flex items-center gap-4 border-2 ${borderColor} ${bgColor}
+                        rounded-xl p-5 shadow-sm`}
           >
             {/* 順位 */}
             <div
-              className={`flex items-center justify-center font-bold text-lg w-10 h-10 rounded-full ${rankBg}`}
+              className={`flex items-center justify-center font-bold text-lg
+                          w-10 h-10 rounded-full ${rankBg}`}
             >
               {item.rank}
             </div>
 
             {/* 画像 */}
-            <div className="w-28 h-28 flex-shrink-0 bg-gray-50 rounded">
+            <div className="w-28 h-28 flex-shrink-0 bg-white rounded border">
               <img
                 src={item.imageUrl || fallbackImage}
                 alt={item.title}
@@ -118,10 +146,20 @@ export default function RankingSection({ items, loading }: Props) {
                   </span>
                 </span>
 
-                {/* スコア（仮） */}
-                <span className="bg-green-50 text-green-800 px-2 py-0.5 rounded-full text-xs font-semibold">
-                  SuppBaseスコア 集計中
-                </span>
+                {/* スコア */}
+                {scoreText ? (
+                  <span className="bg-green-100 text-green-800
+                                   px-2 py-0.5 rounded-full
+                                   text-xs font-bold">
+                    SuppBaseスコア {scoreText}
+                  </span>
+                ) : (
+                  <span className="bg-green-50 text-green-700
+                                   px-2 py-0.5 rounded-full
+                                   text-xs font-medium">
+                    SuppBaseスコア 集計中
+                  </span>
+                )}
               </div>
             </div>
 
@@ -131,7 +169,9 @@ export default function RankingSection({ items, loading }: Props) {
                 href={item.affiliateUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-block bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition"
+                className="inline-block bg-green-600 hover:bg-green-700
+                           text-white text-sm font-semibold
+                           px-4 py-2 rounded-lg transition"
               >
                 Amazonで見る
               </a>
