@@ -7,7 +7,7 @@ import RankingSection from '@/components/RankingSection';
 
 type ProteinTab = 'whey' | 'soy' | 'isolate';
 
-export type RankingItemLite = {
+type RankingItemLite = {
   rank: number;
   asin: string;
   title: string;
@@ -32,35 +32,33 @@ export default function ProteinRankingPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let cancelled = false;
     setLoading(true);
 
-    fetch(`/api/ranking?type=${activeTab}`, { cache: 'no-store' })
+    fetch(`/api/ranking?type=${activeTab}&limit=10`, { cache: 'no-store' })
       .then(res => res.json())
       .then(data => {
-        if (cancelled) return;
-        setItems(Array.isArray(data?.items) ? data.items : []);
-        setDescription(typeof data?.description === 'string' ? data.description : '');
+        setItems(Array.isArray(data.items) ? data.items : []);
+        setDescription(data.description ?? '');
       })
       .catch(() => {
-        if (cancelled) return;
         setItems([]);
         setDescription('');
       })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
+      .finally(() => setLoading(false));
   }, [activeTab]);
 
   return (
     <main className="max-w-5xl mx-auto px-4 py-10">
-      <h1 className="text-3xl font-bold mb-6 text-center">
-        プロテイン ランキング
+      {/* タイトル */}
+      <h1 className="text-3xl font-bold mb-2 text-center">
+        プロテインランキング【2026年1月】
       </h1>
+
+      {/* 注記（重要） */}
+      <p className="text-center text-sm text-gray-500 mb-6">
+        ※ 価格・在庫・レビュー情報は変動します。最新の販売価格・詳細は
+        各商品リンク先の Amazon ページをご確認ください。
+      </p>
 
       {/* タブ */}
       <div className="flex justify-center mb-6 gap-2">
@@ -79,6 +77,7 @@ export default function ProteinRankingPage() {
         ))}
       </div>
 
+      {/* 説明文 */}
       {description && (
         <div className="text-center mb-8 space-y-2">
           <p className="text-sm text-gray-600">{description}</p>
@@ -86,7 +85,7 @@ export default function ProteinRankingPage() {
             href="/about#score"
             className="inline-flex items-center gap-1 text-sm font-semibold text-green-700 hover:text-green-800 underline underline-offset-4"
           >
-            スコアについて詳しく見る →
+            SuppBaseスコアについて詳しく見る →
           </a>
         </div>
       )}

@@ -4,7 +4,18 @@
 
 import { useEffect, useState } from 'react';
 import RankingSection from '@/components/RankingSection';
-import type { RankingItemLite } from '../protein/page';
+
+type RankingItemLite = {
+  rank: number;
+  asin: string;
+  title: string;
+  brand: string;
+  price: number | null;
+  rating: number | null;
+  reviewCount: number | null;
+  imageUrl: string | null;
+  affiliateUrl: string;
+};
 
 export default function SupplementRankingPage() {
   const [items, setItems] = useState<RankingItemLite[]>([]);
@@ -12,35 +23,32 @@ export default function SupplementRankingPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let cancelled = false;
     setLoading(true);
 
-    fetch('/api/ranking?type=supplement', { cache: 'no-store' })
+    fetch('/api/ranking?type=supplement&limit=10', { cache: 'no-store' })
       .then(res => res.json())
       .then(data => {
-        if (cancelled) return;
-        setItems(Array.isArray(data?.items) ? data.items : []);
-        setDescription(typeof data?.description === 'string' ? data.description : '');
+        setItems(Array.isArray(data.items) ? data.items : []);
+        setDescription(data.description ?? '');
       })
       .catch(() => {
-        if (cancelled) return;
         setItems([]);
         setDescription('');
       })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
+      .finally(() => setLoading(false));
   }, []);
 
   return (
     <main className="max-w-5xl mx-auto px-4 py-10">
-      <h1 className="text-3xl font-bold mb-6 text-center">
-        サプリメント ランキング
+      <h1 className="text-3xl font-bold mb-2 text-center">
+        サプリメントランキング【2026年1月】
       </h1>
+
+      {/* 注記 */}
+      <p className="text-center text-sm text-gray-500 mb-6">
+        ※ 価格・在庫・レビュー情報は変動します。最新の販売価格・詳細は
+        各商品リンク先の Amazon ページをご確認ください。
+      </p>
 
       {description && (
         <div className="text-center mb-8 space-y-2">
@@ -49,7 +57,7 @@ export default function SupplementRankingPage() {
             href="/about#score"
             className="inline-flex items-center gap-1 text-sm font-semibold text-green-700 hover:text-green-800 underline underline-offset-4"
           >
-            スコアについて詳しく見る →
+            SuppBaseスコアについて詳しく見る →
           </a>
         </div>
       )}
