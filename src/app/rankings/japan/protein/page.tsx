@@ -7,7 +7,7 @@ import RankingSection from '@/components/RankingSection';
 
 type ProteinTab = 'whey' | 'soy' | 'isolate';
 
-type RankingItemLite = {
+export type RankingItemLite = {
   rank: number;
   asin: string;
   title: string;
@@ -32,19 +32,28 @@ export default function ProteinRankingPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
 
     fetch(`/api/ranking?type=${activeTab}`, { cache: 'no-store' })
       .then(res => res.json())
       .then(data => {
-        setItems(Array.isArray(data.items) ? data.items : []);
-        setDescription(data.description ?? '');
+        if (cancelled) return;
+        setItems(Array.isArray(data?.items) ? data.items : []);
+        setDescription(typeof data?.description === 'string' ? data.description : '');
       })
       .catch(() => {
+        if (cancelled) return;
         setItems([]);
         setDescription('');
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [activeTab]);
 
   return (

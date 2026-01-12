@@ -4,18 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import RankingSection from '@/components/RankingSection';
-
-type RankingItemLite = {
-  rank: number;
-  asin: string;
-  title: string;
-  brand: string;
-  price: number | null;
-  rating: number | null;
-  reviewCount: number | null;
-  imageUrl: string | null;
-  affiliateUrl: string;
-};
+import type { RankingItemLite } from '../protein/page';
 
 export default function SupplementRankingPage() {
   const [items, setItems] = useState<RankingItemLite[]>([]);
@@ -23,19 +12,28 @@ export default function SupplementRankingPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
 
     fetch('/api/ranking?type=supplement', { cache: 'no-store' })
       .then(res => res.json())
       .then(data => {
-        setItems(Array.isArray(data.items) ? data.items : []);
-        setDescription(data.description ?? '');
+        if (cancelled) return;
+        setItems(Array.isArray(data?.items) ? data.items : []);
+        setDescription(typeof data?.description === 'string' ? data.description : '');
       })
       .catch(() => {
+        if (cancelled) return;
         setItems([]);
         setDescription('');
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (
