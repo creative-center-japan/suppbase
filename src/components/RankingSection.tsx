@@ -10,7 +10,7 @@ type RankingItem = {
   reviewCount: number | null;
   imageUrl: string | null;
   affiliateUrl: string;
-  score?: number | null; // ← 追加（来たら自動表示）
+  score?: number | null;
 };
 
 type Props = {
@@ -37,7 +37,6 @@ export default function RankingSection({ items, loading }: Props) {
     );
   }
 
-  // 表示は10位まで
   const displayItems = items.slice(0, 10);
 
   return (
@@ -47,9 +46,6 @@ export default function RankingSection({ items, loading }: Props) {
         const isTop2 = item.rank === 2;
         const isTop3 = item.rank === 3;
 
-        /* =====================
-           枠・背景スタイル
-        ===================== */
         const borderColor = isTop1
           ? 'border-yellow-400'
           : isTop2
@@ -74,20 +70,16 @@ export default function RankingSection({ items, loading }: Props) {
           ? 'bg-orange-400 text-orange-900'
           : 'bg-gray-200 text-gray-700';
 
-        /* =====================
-           値の安全整形
-        ===================== */
-        const hasRating =
-          typeof item.rating === 'number' && item.rating >= 0;
-
-        const ratingText = hasRating
-          ? `★${item.rating!.toFixed(1)}`
-          : '—';
+        // ---------- 値整形 ----------
+        const ratingText =
+          typeof item.rating === 'number' && item.rating >= 0
+            ? `★${item.rating.toFixed(1)}`
+            : '★—';
 
         const reviewText =
           typeof item.reviewCount === 'number'
             ? `${item.reviewCount.toLocaleString()}件`
-            : '—';
+            : '—件';
 
         const priceText =
           typeof item.price === 'number' && item.price > 0
@@ -138,7 +130,7 @@ export default function RankingSection({ items, loading }: Props) {
                   {priceText}
                 </span>
 
-                {/* レビュー */}
+                {/* レビュー（★と件数を分離） */}
                 <span className="flex items-center gap-1 text-green-700">
                   <span className="font-semibold">{ratingText}</span>
                   <span className="text-gray-500">
