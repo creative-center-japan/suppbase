@@ -36,7 +36,7 @@ export default function RankingSection({ items, loading }: Props) {
     );
   }
 
-  // ★ 10位までに制限
+  // 10位まで
   const displayItems = items.slice(0, 10);
 
   return (
@@ -46,23 +46,16 @@ export default function RankingSection({ items, loading }: Props) {
         const isTop2 = item.rank === 2;
         const isTop3 = item.rank === 3;
 
-        const borderColor = isTop1
-          ? 'border-green-600'
-          : isTop2
-          ? 'border-green-500'
-          : isTop3
-          ? 'border-green-400'
-          : 'border-green-200';
-
+        // 順位バッジ色（金・銀・銅）
         const rankBg = isTop1
-          ? 'bg-green-700'
+          ? 'bg-yellow-400 text-yellow-900'
           : isTop2
-          ? 'bg-green-600'
+          ? 'bg-gray-300 text-gray-800'
           : isTop3
-          ? 'bg-green-500'
-          : 'bg-green-400';
+          ? 'bg-orange-400 text-orange-900'
+          : 'bg-gray-200 text-gray-700';
 
-        // ---------- 安全な値整形 ----------
+        // 安全な値整形
         const hasRating =
           typeof item.rating === 'number' && item.rating >= 0;
 
@@ -83,17 +76,17 @@ export default function RankingSection({ items, loading }: Props) {
         return (
           <div
             key={item.asin}
-            className={`flex items-center gap-4 border-2 ${borderColor} rounded-xl p-5 bg-white`}
+            className="flex items-center gap-4 border border-gray-200 rounded-xl p-5 bg-white"
           >
             {/* 順位 */}
             <div
-              className={`flex items-center justify-center text-white font-bold text-lg w-10 h-10 rounded-full ${rankBg}`}
+              className={`flex items-center justify-center font-bold text-lg w-10 h-10 rounded-full ${rankBg}`}
             >
               {item.rank}
             </div>
 
             {/* 画像 */}
-            <div className="w-28 h-28 flex-shrink-0 bg-green-50 rounded">
+            <div className="w-28 h-28 flex-shrink-0 bg-gray-50 rounded">
               <img
                 src={item.imageUrl || fallbackImage}
                 alt={item.title}
@@ -104,7 +97,7 @@ export default function RankingSection({ items, loading }: Props) {
             {/* 情報 */}
             <div className="flex-1 min-w-0">
               <h3 className="font-semibold text-gray-900 leading-snug line-clamp-2">
-                {item.title}
+                #{item.rank} {item.title}
               </h3>
 
               <p className="text-sm text-gray-500 mt-1">
@@ -118,7 +111,7 @@ export default function RankingSection({ items, loading }: Props) {
                 </span>
 
                 {/* レビュー */}
-                <span className="flex items-center gap-1 text-green-600">
+                <span className="flex items-center gap-1 text-green-700">
                   <span className="font-semibold">{ratingText}</span>
                   <span className="text-gray-500">
                     ({reviewText})
@@ -126,7 +119,7 @@ export default function RankingSection({ items, loading }: Props) {
                 </span>
 
                 {/* スコア（仮） */}
-                <span className="bg-green-100 text-green-800 px-2 py-0.5 rounded-full text-xs font-semibold">
+                <span className="bg-green-50 text-green-800 px-2 py-0.5 rounded-full text-xs font-semibold">
                   SuppBaseスコア 集計中
                 </span>
               </div>
