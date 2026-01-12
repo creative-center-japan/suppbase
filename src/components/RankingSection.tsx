@@ -17,13 +17,13 @@ type Props = {
   loading: boolean;
 };
 
-const fallbackImage = '/no-image.png'; // public/no-image.png を置く
+const fallbackImage = '/no-image.png';
 
 export default function RankingSection({ items, loading }: Props) {
   if (loading) {
     return (
       <div className="text-center py-16 text-gray-500">
-        データを読み込み中です。しばらくお待ちください。
+        データを読み込み中です…
       </div>
     );
   }
@@ -36,28 +36,49 @@ export default function RankingSection({ items, loading }: Props) {
     );
   }
 
+  // ★ 10位までに制限
+  const displayItems = items.slice(0, 10);
+
   return (
     <div className="space-y-4">
-      {items.map(item => {
+      {displayItems.map(item => {
         const isTop1 = item.rank === 1;
         const isTop2 = item.rank === 2;
         const isTop3 = item.rank === 3;
 
         const borderColor = isTop1
-          ? 'border-yellow-400'
+          ? 'border-green-600'
           : isTop2
-          ? 'border-gray-400'
+          ? 'border-green-500'
           : isTop3
-          ? 'border-orange-400'
-          : 'border-gray-200';
+          ? 'border-green-400'
+          : 'border-green-200';
 
         const rankBg = isTop1
-          ? 'bg-yellow-400'
+          ? 'bg-green-700'
           : isTop2
-          ? 'bg-gray-400'
+          ? 'bg-green-600'
           : isTop3
-          ? 'bg-orange-400'
-          : 'bg-green-600';
+          ? 'bg-green-500'
+          : 'bg-green-400';
+
+        // ---------- 安全な値整形 ----------
+        const hasRating =
+          typeof item.rating === 'number' && item.rating >= 0;
+
+        const ratingText = hasRating
+          ? `★${item.rating!.toFixed(1)}`
+          : '—';
+
+        const reviewText =
+          typeof item.reviewCount === 'number'
+            ? `${item.reviewCount.toLocaleString()}件`
+            : '—';
+
+        const priceText =
+          typeof item.price === 'number' && item.price > 0
+            ? `¥${item.price.toLocaleString()}`
+            : '価格情報取得中';
 
         return (
           <div
@@ -72,7 +93,7 @@ export default function RankingSection({ items, loading }: Props) {
             </div>
 
             {/* 画像 */}
-            <div className="w-28 h-28 flex-shrink-0">
+            <div className="w-28 h-28 flex-shrink-0 bg-green-50 rounded">
               <img
                 src={item.imageUrl || fallbackImage}
                 alt={item.title}
@@ -90,23 +111,22 @@ export default function RankingSection({ items, loading }: Props) {
                 {item.brand}
               </p>
 
-              <div className="mt-2 flex flex-wrap gap-2 text-sm">
+              <div className="mt-3 flex flex-wrap gap-3 text-sm items-center">
                 {/* 価格 */}
                 <span className="text-green-700 font-semibold">
-                  {item.price && item.price > 0
-                    ? `¥${item.price.toLocaleString()}`
-                    : '価格情報取得中'}
+                  {priceText}
                 </span>
 
                 {/* レビュー */}
-                <span className="text-gray-500">
-                  {item.rating && item.reviewCount
-                    ? `★${item.rating.toFixed(1)} (${item.reviewCount}件)`
-                    : 'レビュー情報取得中'}
+                <span className="flex items-center gap-1 text-green-600">
+                  <span className="font-semibold">{ratingText}</span>
+                  <span className="text-gray-500">
+                    ({reviewText})
+                  </span>
                 </span>
 
-                {/* スコア */}
-                <span className="bg-green-50 text-green-700 px-2 py-0.5 rounded text-xs font-medium">
+                {/* スコア（仮） */}
+                <span className="bg-green-100 text-green-800 px-2 py-0.5 rounded-full text-xs font-semibold">
                   SuppBaseスコア 集計中
                 </span>
               </div>
