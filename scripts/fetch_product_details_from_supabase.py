@@ -10,7 +10,7 @@ from supabase import create_client
 KEEPA_API_KEY = os.environ["KEEPA_API_KEY"]
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE"]
-MAX_PER_RUN = int(os.environ.get("MAX_PER_RUN", 5))  # CI 前提で少なめ
+MAX_PER_RUN = int(os.environ.get("MAX_PER_RUN", 5))
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -21,42 +21,86 @@ DOMAIN_JP = 5
 # Helper
 # =====================
 def fetch_keepa_product(asin: str) -> dict | None:
+    """
+    軽量取得（statsのみ）
+    """
     params = {
         "key": KEEPA_API_KEY,
         "domain": DOMAIN_JP,
         "asin": asin,
         "stats": 180,
+        "history": 0,
     }
 
-    try:
-        r = requests.get(KEEPA_PRODUCT_API, params=params, timeout=30)
-    except Exception as e:
-        print(f"[ERROR] request failed {asin}: {e}")
-        return None
+    r = requests.get(KEEPA_PRODUCT_API, params=params, timeout=30)
 
     if r.status_code == 429:
-        # CI では待たずに skip
-        print(f"[429] rate limited → skip {asin}")
+        print(f"[429] rate limited → skip stats {asin}")
         return None
 
     if r.status_code != 200:
-        print(f"[ERROR] HTTP {r.status_code} for {asin}")
+        print(f"[ERROR] HTTP {r.status_code} stats {asin}")
         return None
 
     products = r.json().get("products")
-    if not products:
+    return products[0] if products else None
+
+
+def fetch_keepa_product_with_offers(asin: str) -> dict | None:
+    """
+    重い取得（offers付き）
+    """
+    params = {
+        "key": KEEPA_API_KEY,
+        "domain": DOMAIN_JP,
+        "asin": asin,
+        "offers": 20,
+        "buybox": 1,
+        "update": 48,
+        "history": 0,
+    }
+
+    r = requests.get(KEEPA_PRODUCT_API, params=params, timeout=60)
+
+    if r.status_code == 429:
+        print(f"[429] rate limited → skip offers {asin}")
         return None
 
-    return products[0]
+    if r.status_code != 200:
+        print(f"[ERROR] HTTP {r.status_code} offers {asin}")
+        return None
+
+    products = r.json().get("products")
+    return products[0] if products else None
+
+
+def extract_price_from_offers(product: dict) -> int | None:
+    """
+    offersCSV から最新価格を抽出
+    """
+    offers = product.get("offers") or []
+    latest_ts = -1
+    latest_price = None
+
+    for offer in offers:
+        csv = offer.get("offerCSV") or []
+        for i in range(0, len(csv), 3):
+            try:
+                ts, price, _ = csv[i:i+3]
+            except ValueError:
+                continue
+            if price > 0 and ts > latest_ts:
+                latest_ts = ts
+                latest_price = price
+
+    return latest_price
 
 
 def extract_image_url(product: dict) -> str | None:
     images_csv = product.get("imagesCSV")
     if not images_csv:
         return None
-
-    first_image = images_csv.split(",")[0]
-    return f"https://images-na.ssl-images-amazon.com/images/I/{first_image}"
+    return f"https://images-na.ssl-images-amazon.com/images/I/{images_csv.split(',')[0]}"
 
 
 def safe_get_current(stats: dict, index: int):
@@ -67,18 +111,12 @@ def safe_get_current(stats: dict, index: int):
 
 
 def extract_latest_sales_rank(product: dict) -> int | None:
-    """
-    salesRanks から最新順位を1つ取得
-    （最も細かいカテゴリの最新値）
-    """
     sales_ranks = product.get("salesRanks")
     if not sales_ranks:
         return None
-
     last_category = list(sales_ranks.values())[-1]
     if not last_category or len(last_category) < 2:
         return None
-
     return last_category[-1]
 
 
@@ -86,7 +124,6 @@ def extract_latest_sales_rank(product: dict) -> int | None:
 # Main
 # =====================
 def main():
-    # 古い updated_at から順に処理（ローテーション）
     res = (
         supabase.table("products")
         .select("asin")
@@ -110,13 +147,9 @@ def main():
 
         now = datetime.now(timezone.utc).isoformat()
 
-        # -----------------
-        # products (master)
-        # -----------------
         title = product.get("title")
         if not title:
-            print(f"[SKIP] title missing {asin}")
-            continue  # NOT NULL 制約回避
+            continue
 
         image_url = extract_image_url(product)
 
@@ -129,14 +162,18 @@ def main():
             }
         )
 
-        # -----------------
-        # product_snapshots
-        # -----------------
         stats = product.get("stats", {})
+        price = stats.get("buyBoxPrice")
+
+        # ---- 価格が取れない場合のみ offers を使う ----
+        if not isinstance(price, int) or price <= 0:
+            heavy = fetch_keepa_product_with_offers(asin)
+            if heavy:
+                price = extract_price_from_offers(heavy)
 
         snapshot = {
             "asin": asin,
-            "buybox_price": stats.get("buyBoxPrice"),
+            "buybox_price": price,
             "rating": safe_get_current(stats, 2),
             "review_count": safe_get_current(stats, 11),
             "sales_rank_latest": extract_latest_sales_rank(product),
@@ -147,13 +184,8 @@ def main():
         }
 
         insert_snapshots.append(snapshot)
-
-        # Keepa に配慮（CIでも安全）
         time.sleep(1)
 
-    # =====================
-    # DB write
-    # =====================
     if upsert_products:
         supabase.table("products").upsert(upsert_products).execute()
         print(f"[OK] upserted {len(upsert_products)} products")
