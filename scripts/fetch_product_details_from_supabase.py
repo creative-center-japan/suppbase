@@ -10,7 +10,7 @@ from supabase import create_client
 KEEPA_API_KEY = os.environ["KEEPA_API_KEY"]
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE"]
-MAX_PER_RUN = int(os.environ.get("MAX_PER_RUN", 5))  # CI 前提
+MAX_PER_RUN = int(os.environ.get("MAX_PER_RUN", 5))  # CI 前提で少なめ
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -35,7 +35,7 @@ def fetch_keepa_product(asin: str) -> dict | None:
         return None
 
     if r.status_code == 429:
-        # CI では待たない
+        # CI では待たずに skip
         print(f"[429] rate limited → skip {asin}")
         return None
 
@@ -148,7 +148,7 @@ def main():
 
         insert_snapshots.append(snapshot)
 
-        # Keepa に優しく
+        # Keepa に配慮（CIでも安全）
         time.sleep(1)
 
     # =====================
