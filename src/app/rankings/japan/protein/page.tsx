@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import RankingSection from '@/components/RankingSection';
 
-type ProteinTab = 'whey' | 'soy' | 'isolate';
+type ProteinTab = 'wpi' | 'other';
 
 type RankingItemLite = {
   rank: number;
@@ -17,12 +17,12 @@ type RankingItemLite = {
   reviewCount: number | null;
   imageUrl: string | null;
   affiliateUrl: string;
+  score?: number | null;
 };
 
 const tabs: { id: ProteinTab; label: string }[] = [
-  { id: 'whey', label: 'ホエイ' },
-  { id: 'soy', label: 'ソイ' },
-  { id: 'isolate', label: 'アイソレート（WPI）' },
+  { id: 'wpi', label: 'WPI（アイソレート）' },
+  { id: 'other', label: 'その他プロテイン' },
 ];
 
 function getCurrentYearMonth() {
@@ -33,7 +33,7 @@ function getCurrentYearMonth() {
 }
 
 export default function ProteinRankingPage() {
-  const [activeTab, setActiveTab] = useState<ProteinTab>('whey');
+  const [activeTab, setActiveTab] = useState<ProteinTab>('wpi');
   const [items, setItems] = useState<RankingItemLite[]>([]);
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(true);
@@ -43,7 +43,9 @@ export default function ProteinRankingPage() {
   useEffect(() => {
     setLoading(true);
 
-    fetch(`/api/ranking?type=${activeTab}&limit=10`, { cache: 'no-store' })
+    fetch(`/api/ranking?type=${activeTab}&limit=10`, {
+      cache: 'no-store',
+    })
       .then(res => res.json())
       .then(data => {
         setItems(Array.isArray(data.items) ? data.items : []);
