@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import RankingSection from '@/components/RankingSection';
 
-type ProteinTab = 'wpi' | 'other';
+type ProteinTab = 'wpi' | 'soy';
 
 type RankingItemLite = {
   rank: number;
@@ -22,14 +22,12 @@ type RankingItemLite = {
 
 const tabs: { id: ProteinTab; label: string }[] = [
   { id: 'wpi', label: 'WPI（アイソレート）' },
-  { id: 'other', label: 'その他プロテイン' },
+  { id: 'soy', label: 'ソイプロテイン' },
 ];
 
 function getCurrentYearMonth() {
   const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1;
-  return `${year}年${month}月`;
+  return `${now.getFullYear()}年${now.getMonth() + 1}月`;
 }
 
 export default function ProteinRankingPage() {
@@ -43,9 +41,7 @@ export default function ProteinRankingPage() {
   useEffect(() => {
     setLoading(true);
 
-    fetch(`/api/ranking?type=${activeTab}&limit=10`, {
-      cache: 'no-store',
-    })
+    fetch(`/api/ranking?type=${activeTab}&limit=10`, { cache: 'no-store' })
       .then(res => res.json())
       .then(data => {
         setItems(Array.isArray(data.items) ? data.items : []);
