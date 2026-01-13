@@ -1,53 +1,54 @@
 // healthy-site\src\app\rankings\japan\supplements\page.tsx
 
-'use client';
+export const runtime = 'nodejs';
 
-import { useEffect, useState } from 'react';
-import RankingSection from '@/components/RankingSection';
+import { NextRequest, NextResponse } from 'next/server';
+import { Pool } from 'pg';
 
-type RankingItemLite = {
-  rank: number;
-  asin: string;
-  title: string;
-  brand: string;
-  price: number | null;
-  rating: number | null;
-  reviewCount: number | null;
-  imageUrl: string | null;
-  affiliateUrl: string;
-  score?: number | null;
-};
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL!,
+  ssl: { rejectUnauthorized: false },
+});
 
-export default function SupplementRankingPage() {
-  const [items, setItems] = useState<RankingItemLite[]>([]);
-  const [loading, setLoading] = useState(true);
+export async function GET(req: NextRequest) {
+  try {
+    const sp = new URL(req.url).searchParams;
+    const limit = Number(sp.get('limit') ?? 10);
 
-  useEffect(() => {
-    setLoading(true);
+    const sql = `
+      SELECT
+        row_number() over (order by v.score desc nulls last) as rank,
+        v.asin,
+        v.title,
+        v.brand,
+        v.buybox_price as price,
+        v.rating,
+        v.review_count,
+        v.score
+      FROM v_product_score_latest v
+      JOIN products p USING (asin)
+      WHERE p.sub_category = 'supplement'
+      ORDER BY v.score DESC NULLS LAST
+      LIMIT $1
+    `;
 
-    fetch('/api/ranking/supplement?limit=10', { cache: 'no-store' })
-      .then(res => res.json())
-      .then(data => {
-        setItems(Array.isArray(data.items) ? data.items : []);
-      })
-      .catch(() => {
-        setItems([]);
-      })
-      .finally(() => setLoading(false));
-  }, []);
+    const { rows } = await pool.query(sql, [limit]);
 
-  return (
-    <main className="max-w-5xl mx-auto px-4 py-10">
-      <h1 className="text-3xl font-bold text-center mb-6">
-        サプリメントランキング
-      </h1>
-
-      <p className="text-center text-sm text-gray-500 mb-6">
-        ※ 価格・在庫・レビュー情報は変動します。最新の販売価格・詳細は
-        各商品リンク先の Amazon ページをご確認ください。
-      </p>
-
-      <RankingSection items={items} loading={loading} />
-    </main>
-  );
+    return NextResponse.json({
+      items: rows.map(r => ({
+        rank: r.rank,
+        asin: r.asin,
+        title: r.title,
+        brand: r.brand ?? '',
+        price: r.price,
+        rating: r.rating,
+        reviewCount: r.review_count,
+        score: r.score,
+        imageUrl: `https://images-na.ssl-images-amazon.com/images/P/${r.asin}.01._SL300_.jpg`,
+        affiliateUrl: `https://www.amazon.co.jp/dp/${r.asin}`,
+      })),
+    });
+  } catch (e) {
+    return NextResponse.json({ items: [] });
+  }
 }
