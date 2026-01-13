@@ -1,63 +1,28 @@
 // healthy-site\src\app\rankings\japan\supplements\page.tsx
 
 'use client';
-export const runtime = 'nodejs';
 
-import { NextRequest, NextResponse } from 'next/server';
-import { Pool } from 'pg';
+import { useEffect, useState } from 'react';
+import RankingSection from '@/components/RankingSection';
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL!,
-  ssl: { rejectUnauthorized: false },
-});
+export default function SupplementRankingPage() {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-export async function GET(req: NextRequest) {
-  try {
-    const sp = new URL(req.url).searchParams;
-    const limit = Number(sp.get('limit') ?? 10);
+  useEffect(() => {
+    fetch('/api/ranking/supplement?limit=10', { cache: 'no-store' })
+      .then(res => res.json())
+      .then(data => setItems(Array.isArray(data.items) ? data.items : []))
+      .finally(() => setLoading(false));
+  }, []);
 
-    const sql = `
-      SELECT
-        row_number() over (order by v.score desc nulls last) as rank,
-        v.asin,
-        v.title,
-        v.brand,
-        v.buybox_price as price,
-        v.rating,
-        v.review_count,
-        v.score
-      FROM v_product_score_latest v
-      JOIN products p USING (asin)
-      WHERE p.sub_category = 'supplement'
-      ORDER BY v.score DESC NULLS LAST
-      LIMIT $1
-    `;
+  return (
+    <main className="max-w-5xl mx-auto px-4 py-10">
+      <h1 className="text-3xl font-bold text-center mb-6">
+        サプリメントランキング
+      </h1>
 
-    const { rows } = await pool.query(sql, [limit]);
-
-    return NextResponse.json({
-      description:
-        'サプリメント商品を対象に、公開データ（価格変動・レビュー・評価など）をもとにスコア化しています。',
-      items: rows.map(r => ({
-        rank: r.rank,
-        asin: r.asin,
-        title: r.title,
-        brand: r.brand ?? '',
-        price: r.price,
-        rating: r.rating,
-        reviewCount: r.review_count,
-        score: r.score,
-        imageUrl: `https://images-na.ssl-images-amazon.com/images/P/${r.asin}.01._SL300_.jpg`,
-        affiliateUrl: `https://www.amazon.co.jp/dp/${r.asin}`,
-      })),
-    });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return NextResponse.json({
-      description:
-        'サプリメントランキング情報の取得に失敗しました。',
-      items: [],
-      errorHint: msg,
-    });
-  }
+      <RankingSection items={items} loading={loading} />
+    </main>
+  );
 }
