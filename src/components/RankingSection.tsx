@@ -47,30 +47,29 @@ export default function RankingSection({ items, loading }: Props) {
         const isTop3 = item.rank === 3;
 
         const borderColor = isTop1
-          ? 'border-yellow-400'
+          ? 'border-yellow-500'
           : isTop2
-          ? 'border-gray-300'
+          ? 'border-slate-400'
           : isTop3
-          ? 'border-orange-400'
+          ? 'border-amber-600'
           : 'border-gray-200';
 
         const bgColor = isTop1
           ? 'bg-yellow-50'
           : isTop2
-          ? 'bg-gray-50'
+          ? 'bg-slate-50'
           : isTop3
-          ? 'bg-orange-50'
+          ? 'bg-amber-50'
           : 'bg-white';
 
         const rankBg = isTop1
-          ? 'bg-yellow-400 text-yellow-900'
+          ? 'bg-yellow-500 text-yellow-900'
           : isTop2
-          ? 'bg-gray-300 text-gray-800'
+          ? 'bg-slate-300 text-slate-800'
           : isTop3
-          ? 'bg-orange-400 text-orange-900'
+          ? 'bg-amber-600 text-amber-100'
           : 'bg-gray-200 text-gray-700';
 
-        // ---------- 値整形 ----------
         const ratingText =
           typeof item.rating === 'number' && item.rating >= 0
             ? `★${item.rating.toFixed(1)}`
@@ -125,12 +124,10 @@ export default function RankingSection({ items, loading }: Props) {
               </p>
 
               <div className="mt-3 flex flex-wrap gap-3 text-sm items-center">
-                {/* 価格 */}
                 <span className="text-green-700 font-semibold">
                   {priceText}
                 </span>
 
-                {/* レビュー（★と件数を分離） */}
                 <span className="flex items-center gap-1 text-green-700">
                   <span className="font-semibold">{ratingText}</span>
                   <span className="text-gray-500">
@@ -138,7 +135,6 @@ export default function RankingSection({ items, loading }: Props) {
                   </span>
                 </span>
 
-                {/* スコア */}
                 {scoreText ? (
                   <span className="bg-green-100 text-green-800
                                    px-2 py-0.5 rounded-full
