@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
         title: r.title,
         brand: r.brand ?? '',
         price: r.price,
-        rating: null, // ← 今回は未使用（将来追加OK）
+        rating: null, // 現在は未使用
         reviewCount: r.review_count,
         score: r.suppbase_score,
         imageUrl: r.image_url ?? null,

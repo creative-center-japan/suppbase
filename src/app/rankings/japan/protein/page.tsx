@@ -5,9 +5,7 @@
 import { useEffect, useState } from 'react';
 import RankingSection from '@/components/RankingSection';
 
-type ProteinTab = 'wpi' | 'soy';
-
-type RankingItemLite = {
+type RankingItem = {
   rank: number;
   asin: string;
   title: string;
@@ -20,78 +18,36 @@ type RankingItemLite = {
   score?: number | null;
 };
 
-const tabs: { id: ProteinTab; label: string }[] = [
-  { id: 'wpi', label: 'WPI（アイソレート）' },
-  { id: 'soy', label: 'ソイプロテイン' },
-];
-
-function getCurrentYearMonth() {
-  const now = new Date();
-  return `${now.getFullYear()}年${now.getMonth() + 1}月`;
+function getYearMonth() {
+  const d = new Date();
+  return `${d.getFullYear()}年${d.getMonth() + 1}月`;
 }
 
 export default function ProteinRankingPage() {
-  const [activeTab, setActiveTab] = useState<ProteinTab>('wpi');
-  const [items, setItems] = useState<RankingItemLite[]>([]);
-  const [description, setDescription] = useState('');
+  const [items, setItems] = useState<RankingItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const yearMonth = getCurrentYearMonth();
+  const ym = getYearMonth();
 
   useEffect(() => {
     setLoading(true);
 
-    fetch(`/api/ranking?type=${activeTab}&limit=10`, { cache: 'no-store' })
-      .then(res => res.json())
-      .then(data => {
-        setItems(Array.isArray(data.items) ? data.items : []);
-        setDescription(data.description ?? '');
-      })
-      .catch(() => {
-        setItems([]);
-        setDescription('');
-      })
+    fetch('/api/ranking?limit=10', { cache: 'no-store' })
+      .then(r => r.json())
+      .then(d => setItems(Array.isArray(d.items) ? d.items : []))
       .finally(() => setLoading(false));
-  }, [activeTab]);
+  }, []);
 
   return (
     <main className="max-w-5xl mx-auto px-4 py-10">
       <h1 className="text-3xl font-bold mb-2 text-center">
-        プロテインランキング【{yearMonth}】
+        プロテインランキング【{ym}】
       </h1>
 
       <p className="text-center text-sm text-gray-500 mb-6">
-        ※ 価格・在庫・レビュー情報は変動します。最新の販売価格・詳細は
-        各商品リンク先の Amazon ページをご確認ください。
+        ※ 価格・在庫・レビュー情報は変動します。最新情報は
+        Amazon 商品ページをご確認ください。
       </p>
-
-      <div className="flex justify-center mb-6 gap-2">
-        {tabs.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2 rounded-full border font-medium transition ${
-              activeTab === tab.id
-                ? 'bg-green-600 text-white border-green-600'
-                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {description && (
-        <div className="text-center mb-8 space-y-2">
-          <p className="text-sm text-gray-600">{description}</p>
-          <a
-            href="/about#score"
-            className="inline-flex items-center gap-1 text-sm font-semibold text-green-700 hover:text-green-800 underline underline-offset-4"
-          >
-            SuppBaseスコアについて詳しく見る →
-          </a>
-        </div>
-      )}
 
       <RankingSection items={items} loading={loading} />
     </main>

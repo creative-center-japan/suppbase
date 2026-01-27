@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import RankingSection from '@/components/RankingSection';
 
-type RankingItemLite = {
+type RankingItem = {
   rank: number;
   asin: string;
   title: string;
@@ -19,19 +19,17 @@ type RankingItemLite = {
 };
 
 export default function SupplementRankingPage() {
-  const [items, setItems] = useState<RankingItemLite[]>([]);
+  const [items, setItems] = useState<RankingItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
 
-    fetch('/api/ranking/supplement?limit=10', { cache: 'no-store' })
+    // 🔧 supplement 専用 API はまだ無いので暫定的に共通 API
+    fetch('/api/ranking?limit=10', { cache: 'no-store' })
       .then(res => res.json())
       .then(data => {
         setItems(Array.isArray(data.items) ? data.items : []);
-      })
-      .catch(() => {
-        setItems([]);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -43,8 +41,7 @@ export default function SupplementRankingPage() {
       </h1>
 
       <p className="text-center text-sm text-gray-500 mb-6">
-        ※ 価格・在庫・レビュー情報は変動します。最新の販売価格・詳細は
-        各商品リンク先の Amazon ページをご確認ください。
+        ※ 本ランキングは暫定表示です。後日、サプリ専用ランキングを追加予定です。
       </p>
 
       <RankingSection items={items} loading={loading} />
