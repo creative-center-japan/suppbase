@@ -1,10 +1,10 @@
 // src/app/api/ranking/route.ts
+
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { Pool } from 'pg';
 
-// PostgreSQL 接続（Supabase）
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL!,
   ssl: { rejectUnauthorized: false },
@@ -13,8 +13,6 @@ const pool = new Pool({
 export async function GET(req: NextRequest) {
   try {
     const sp = new URL(req.url).searchParams;
-
-    const type = (sp.get('type') ?? 'wpi').toLowerCase();
     const limit = Number(sp.get('limit') ?? 10);
 
     const sql = `
@@ -26,22 +24,18 @@ export async function GET(req: NextRequest) {
         price,
         rating,
         review_count,
-        image_url,      -- ★ DB の image_url を取る
-        suppbase_score  -- ★ スコア
+        image_url,
+        suppbase_score
       FROM v_ranking_latest_new
-      WHERE protein_type = $1
       ORDER BY rank
-      LIMIT $2
+      LIMIT $1
     `;
 
-    const { rows } = await pool.query(sql, [type, limit]);
+    const { rows } = await pool.query(sql, [limit]);
 
     return NextResponse.json({
       description:
-        type === 'wpi'
-          ? 'WPI（ホエイプロテイン・アイソレート）として分類された商品の中から、公開データをもとにスコア化しています。'
-          : 'プロテイン商品を対象に、公開データをもとにスコア化しています。',
-
+        '公開データをもとに、価格の安定性・需要の継続性などを考慮してスコア化しています。',
       items: rows.map(r => ({
         rank: r.rank,
         asin: r.asin,
@@ -51,10 +45,7 @@ export async function GET(req: NextRequest) {
         rating: r.rating,
         reviewCount: r.review_count,
         score: r.suppbase_score,
-
-        // ★ snake_case → camelCase（ここが超重要）
         imageUrl: r.image_url ?? null,
-
         affiliateUrl: `https://www.amazon.co.jp/dp/${r.asin}`,
       })),
     });
