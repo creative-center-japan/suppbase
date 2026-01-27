@@ -1,64 +1,47 @@
 // healthy-site\src\app\rankings\japan\supplements\page.tsx
 
-export const runtime = 'nodejs';
+'use client';
 
-import { NextRequest, NextResponse } from 'next/server';
-import { Pool } from 'pg';
+import { useEffect, useState } from 'react';
+import RankingSection from '@/components/RankingSection';
 
-// PostgreSQL (Supabase) 接続
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL!,
-  ssl: { rejectUnauthorized: false },
-});
+type RankingItem = {
+  rank: number;
+  asin: string;
+  title: string;
+  brand: string;
+  price: number | null;
+  rating: number | null;
+  reviewCount: number | null;
+  imageUrl: string | null;
+  affiliateUrl: string;
+  score?: number | null;
+};
 
-export async function GET(req: NextRequest) {
-  try {
-    const sp = new URL(req.url).searchParams;
-    const limit = Number(sp.get('limit') ?? 10);
+export default function SupplementRankingPage() {
+  const [items, setItems] = useState<RankingItem[]>([]);
+  const [loading, setLoading] = useState(true);
 
-    const sql = `
-      select
-        category_rank as rank,     -- ★ サプリ内順位
-        asin,
-        title,
-        brand,
-        price,
-        review_count,
-        image_url,
-        suppbase_score
-      from v_ranking_japan
-      where protein_type = 'supplement'
-      order by category_rank
-      limit $1
-    `;
+  useEffect(() => {
+    setLoading(true);
 
-    const { rows } = await pool.query(sql, [limit]);
+    fetch('/api/ranking/japan/supplement?limit=10', { cache: 'no-store' })
+      .then(res => res.json())
+      .then(data => setItems(Array.isArray(data.items) ? data.items : []))
+      .finally(() => setLoading(false));
+  }, []);
 
-    return NextResponse.json({
-      description:
-        'サプリメント商品を対象に、公開データをもとにスコア化しています。',
-      items: rows.map(r => ({
-        rank: r.rank,
-        asin: r.asin,
-        title: r.title,
-        brand: r.brand ?? '',
-        price: r.price,
-        rating: null, // 未使用
-        reviewCount: r.review_count,
-        score: r.suppbase_score,
-        imageUrl: r.image_url ?? null,
-        affiliateUrl: `https://www.amazon.co.jp/dp/${r.asin}`,
-      })),
-    });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error('[JP supplement ranking error]', msg);
-    return NextResponse.json(
-      {
-        items: [],
-        errorHint: msg,
-      },
-      { status: 500 }
-    );
-  }
+  return (
+    <main className="max-w-5xl mx-auto px-4 py-10">
+      <h1 className="text-3xl font-bold text-center mb-6">
+        サプリメントランキング
+      </h1>
+
+      <p className="text-center text-sm text-gray-500 mb-6">
+        ※ 本ランキングはサプリメント商品を対象としています。
+      </p>
+
+      <RankingSection items={items} loading={loading} />
+    </main>
+  );
 }
