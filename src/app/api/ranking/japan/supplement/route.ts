@@ -23,8 +23,7 @@ export async function GET(req: NextRequest) {
         review_count,
         image_url,
         suppbase_score
-      from v_ranking_japan
-      where protein_type = 'supplement'
+      from v_ranking_japan_bcaa_eaa
       order by category_rank
       limit $1
     `;
@@ -33,7 +32,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       description:
-        'サプリメント商品を対象に、公開データをもとにスコア化しています。',
+        'BCAA / EAA サプリメントを対象に、公開データをもとに集計しています。',
       items: rows.map(r => ({
         rank: r.rank,
         asin: r.asin,
@@ -49,11 +48,9 @@ export async function GET(req: NextRequest) {
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.error('[JP supplement ranking error]', msg);
     return NextResponse.json(
       { items: [], errorHint: msg },
       { status: 500 }
     );
   }
 }
-
