@@ -1,4 +1,5 @@
 'use client';
+// healthy-site\suppbase\src\components\RankingSection.tsx
 
 type RankingItem = {
   rank: number;
