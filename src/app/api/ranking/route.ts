@@ -13,6 +13,9 @@ const pool = new Pool({
 export async function GET(req: NextRequest) {
   try {
     const sp = new URL(req.url).searchParams;
+
+    // ★ タブから来る type
+    const type = (sp.get('type') ?? 'wpi').toLowerCase();
     const limit = Number(sp.get('limit') ?? 10);
 
     const sql = `
@@ -25,23 +28,26 @@ export async function GET(req: NextRequest) {
         review_count,
         image_url,
         suppbase_score
-      FROM v_ranking_latest_new
+      FROM v_ranking_japan
+      WHERE protein_type = $1
       ORDER BY rank
-      LIMIT $1
+      LIMIT $2
     `;
 
-    const { rows } = await pool.query(sql, [limit]);
+    const { rows } = await pool.query(sql, [type, limit]);
 
     return NextResponse.json({
       description:
-        '公開データをもとに、価格の安定性・需要の継続性などを考慮してスコア化しています。',
+        type === 'wpi'
+          ? 'WPI（ホエイプロテイン・アイソレート）として分類された商品の中から、公開データをもとにスコア化しています。'
+          : 'ソイプロテインとして分類された商品の中から、公開データをもとにスコア化しています。',
       items: rows.map(r => ({
         rank: r.rank,
         asin: r.asin,
         title: r.title,
         brand: r.brand ?? '',
         price: r.price,
-        rating: null, // 現在は未使用
+        rating: null,
         reviewCount: r.review_count,
         score: r.suppbase_score,
         imageUrl: r.image_url ?? null,
@@ -52,12 +58,7 @@ export async function GET(req: NextRequest) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error('[API ranking error]', msg);
     return NextResponse.json(
-      {
-        description:
-          'ランキング情報の取得に失敗しました。時間をおいて再度お試しください。',
-        items: [],
-        errorHint: msg,
-      },
+      { items: [], errorHint: msg },
       { status: 500 }
     );
   }
