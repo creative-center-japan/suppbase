@@ -46,30 +46,33 @@ export default function RankingSection({ items, loading }: Props) {
         const isTop2 = item.rank === 2;
         const isTop3 = item.rank === 3;
 
+        /* ---------- 枠線・背景（カード全体） ---------- */
         const borderColor = isTop1
           ? 'border-yellow-500'
           : isTop2
-          ? 'border-slate-400'
+          ? 'border-gray-400'
           : isTop3
-          ? 'border-amber-600'
+          ? 'border-amber-700'
           : 'border-gray-200';
 
         const bgColor = isTop1
-          ? 'bg-yellow-50'
+          ? 'bg-yellow-100'
           : isTop2
-          ? 'bg-slate-50'
+          ? 'bg-gray-100'
           : isTop3
-          ? 'bg-amber-50'
+          ? 'bg-amber-100'
           : 'bg-white';
 
+        /* ---------- 順位バッジ（丸） ---------- */
         const rankBg = isTop1
-          ? 'bg-yellow-500 text-yellow-900'
+          ? 'bg-gradient-to-br from-yellow-400 to-yellow-600 text-white'
           : isTop2
-          ? 'bg-slate-300 text-slate-800'
+          ? 'bg-gradient-to-br from-gray-300 to-gray-500 text-white'
           : isTop3
-          ? 'bg-amber-600 text-amber-100'
+          ? 'bg-gradient-to-br from-amber-500 to-amber-700 text-white'
           : 'bg-gray-200 text-gray-700';
 
+        /* ---------- 表示用テキスト整形 ---------- */
         const ratingText =
           typeof item.rating === 'number' && item.rating >= 0
             ? `★${item.rating.toFixed(1)}`
@@ -124,10 +127,12 @@ export default function RankingSection({ items, loading }: Props) {
               </p>
 
               <div className="mt-3 flex flex-wrap gap-3 text-sm items-center">
+                {/* 価格 */}
                 <span className="text-green-700 font-semibold">
                   {priceText}
                 </span>
 
+                {/* レビュー */}
                 <span className="flex items-center gap-1 text-green-700">
                   <span className="font-semibold">{ratingText}</span>
                   <span className="text-gray-500">
@@ -135,6 +140,7 @@ export default function RankingSection({ items, loading }: Props) {
                   </span>
                 </span>
 
+                {/* スコア */}
                 {scoreText ? (
                   <span className="bg-green-100 text-green-800
                                    px-2 py-0.5 rounded-full
