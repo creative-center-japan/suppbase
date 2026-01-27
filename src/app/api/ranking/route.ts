@@ -22,7 +22,6 @@ export async function GET(req: NextRequest) {
         title,
         brand,
         price,
-        rating,
         review_count,
         image_url,
         suppbase_score
@@ -42,7 +41,7 @@ export async function GET(req: NextRequest) {
         title: r.title,
         brand: r.brand ?? '',
         price: r.price,
-        rating: r.rating,
+        rating: null, // ← 今回は未使用（将来追加OK）
         reviewCount: r.review_count,
         score: r.suppbase_score,
         imageUrl: r.image_url ?? null,
@@ -51,6 +50,7 @@ export async function GET(req: NextRequest) {
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+    console.error('[API ranking error]', msg);
     return NextResponse.json(
       {
         description:
