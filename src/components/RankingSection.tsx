@@ -1,5 +1,5 @@
 'use client';
-// healthy-site\suppbase\src\components\RankingSection.tsx
+// healthy-site/suppbase/src/components/RankingSection.tsx
 
 type RankingItem = {
   rank: number;
@@ -20,6 +20,36 @@ type Props = {
 };
 
 const fallbackImage = '/no-image.png';
+
+/**
+ * ★ Tailwind purge 対策
+ * ここに class 名をベタ書きしておくことで
+ * 本番ビルドでも確実に反映される
+ */
+const RANK_STYLE_MAP: Record<
+  number,
+  {
+    border: string;
+    bg: string;
+    badge: string;
+  }
+> = {
+  1: {
+    border: 'border-yellow-500',
+    bg: 'bg-yellow-100',
+    badge: 'bg-yellow-500 text-white',
+  },
+  2: {
+    border: 'border-gray-400',
+    bg: 'bg-gray-100',
+    badge: 'bg-gray-400 text-white',
+  },
+  3: {
+    border: 'border-amber-700',
+    bg: 'bg-amber-100',
+    badge: 'bg-amber-600 text-white',
+  },
+};
 
 export default function RankingSection({ items, loading }: Props) {
   if (loading) {
@@ -43,37 +73,12 @@ export default function RankingSection({ items, loading }: Props) {
   return (
     <div className="space-y-5">
       {displayItems.map(item => {
-        const isTop1 = item.rank === 1;
-        const isTop2 = item.rank === 2;
-        const isTop3 = item.rank === 3;
+        const rankStyle = RANK_STYLE_MAP[item.rank];
 
-        /* ---------- 枠線・背景（カード全体） ---------- */
-        const borderColor = isTop1
-          ? 'border-yellow-500'
-          : isTop2
-          ? 'border-gray-400'
-          : isTop3
-          ? 'border-amber-700'
-          : 'border-gray-200';
+        const borderColor = rankStyle?.border ?? 'border-gray-200';
+        const bgColor = rankStyle?.bg ?? 'bg-white';
+        const rankBg = rankStyle?.badge ?? 'bg-gray-200 text-gray-700';
 
-        const bgColor = isTop1
-          ? 'bg-yellow-100'
-          : isTop2
-          ? 'bg-gray-100'
-          : isTop3
-          ? 'bg-amber-100'
-          : 'bg-white';
-
-        /* ---------- 順位バッジ（丸） ---------- */
-        const rankBg = isTop1
-          ? 'bg-gradient-to-br from-yellow-400 to-yellow-600 text-white'
-          : isTop2
-          ? 'bg-gradient-to-br from-gray-300 to-gray-500 text-white'
-          : isTop3
-          ? 'bg-gradient-to-br from-amber-500 to-amber-700 text-white'
-          : 'bg-gray-200 text-gray-700';
-
-        /* ---------- 表示用テキスト整形 ---------- */
         const ratingText =
           typeof item.rating === 'number' && item.rating >= 0
             ? `★${item.rating.toFixed(1)}`
@@ -100,7 +105,7 @@ export default function RankingSection({ items, loading }: Props) {
             className={`flex items-center gap-4 border-2 ${borderColor} ${bgColor}
                         rounded-xl p-5 shadow-sm`}
           >
-            {/* 順位 */}
+            {/* 順位バッジ */}
             <div
               className={`flex items-center justify-center font-bold text-lg
                           w-10 h-10 rounded-full ${rankBg}`}
