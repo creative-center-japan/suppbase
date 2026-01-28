@@ -18,9 +18,16 @@ type RankingItem = {
   score?: number | null;
 };
 
+function getYearMonth() {
+  const d = new Date();
+  return `${d.getFullYear()}年${d.getMonth() + 1}月`;
+}
+
+
 export default function SupplementRankingPage() {
   const [items, setItems] = useState<RankingItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const ym = getYearMonth();
 
   useEffect(() => {
     setLoading(true);
@@ -34,7 +41,7 @@ export default function SupplementRankingPage() {
   return (
     <main className="max-w-5xl mx-auto px-4 py-10">
       <h1 className="text-3xl font-bold text-center mb-6">
-        サプリメントランキング
+        サプリメントランキング【{ym}】
       </h1>
 
       <p className="text-center text-sm text-gray-500 mb-6">
