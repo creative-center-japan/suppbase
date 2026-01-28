@@ -3,134 +3,175 @@
 import os
 import time
 import requests
-from supabase import create_client, Client
+from datetime import datetime, timezone
+from supabase import create_client
 
-# =====================
-# ENV
-# =====================
+KEEPA_API_KEY = os.environ["KEEPA_API_KEY"]
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE"]
-KEEPA_API_KEY = os.environ["KEEPA_API_KEY"]
 MAX_PER_RUN = int(os.environ.get("MAX_PER_RUN", "70"))
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-KEEPA_ENDPOINT = "https://api.keepa.com/product"
+KEEPA_PRODUCT_API = "https://api.keepa.com/product"
+DOMAIN_JP = 5  # JP
 
-# =====================
-# ASIN selection logic
-# =====================
-
-def fetch_target_asins():
-    """
-    Priority:
-    1. BCAA / EAA (snapshot < 20)
-    2. Young ASINs (snapshot 1–10)
-    3. Safety fill (snapshot < 30)
-    """
-    asins: list[str] = []
-
-    # ---------- ① BCAA / EAA 最優先 ----------
-    bcaa_sql = """
-        select p.asin
-        from products p
-        left join product_snapshots s on s.asin = p.asin
-        where p.protein_type = 'supplement'
-          and (p.title ilike '%BCAA%' or p.title ilike '%EAA%')
-        group by p.asin
-        having count(s.id) < 20
-        order by count(s.id) asc
-        limit 30;
-    """
-    bcaa = supabase.rpc("execute_sql", {"query": bcaa_sql}).execute().data or []
-    asins.extend([r["asin"] for r in bcaa])
-
-    # ---------- ② 若手 ASIN ----------
-    young_sql = """
-        select p.asin
-        from products p
-        left join product_snapshots s on s.asin = p.asin
-        group by p.asin
-        having count(s.id) between 1 and 10
-        order by count(s.id) asc
-        limit 30;
-    """
-    young = supabase.rpc("execute_sql", {"query": young_sql}).execute().data or []
-    asins.extend([r["asin"] for r in young])
-
-    # ---------- ③ 保険枠（深掘りしすぎ防止） ----------
-    rest = MAX_PER_RUN - len(asins)
-    if rest > 0:
-        safety_sql = f"""
-            select p.asin
-            from products p
-            left join product_snapshots s on s.asin = p.asin
-            group by p.asin
-            having count(s.id) < 30
-            order by count(s.id) asc
-            limit {rest};
-        """
-        safety = supabase.rpc("execute_sql", {"query": safety_sql}).execute().data or []
-        asins.extend([r["asin"] for r in safety])
-
-    # 重複排除 & 上限
-    return list(dict.fromkeys(asins))[:MAX_PER_RUN]
-
-# =====================
-# Keepa fetch
-# =====================
-
-def fetch_keepa_product(asin: str) -> dict | None:
+def fetch_keepa_product(asin: str):
     params = {
         "key": KEEPA_API_KEY,
-        "domain": 5,  # Amazon JP
+        "domain": DOMAIN_JP,
         "asin": asin,
-        "stats": 1,
-        "offers": 20,
+        "stats": 180,
+        "history": 0,
     }
-    r = requests.get(KEEPA_ENDPOINT, params=params, timeout=20)
-    r.raise_for_status()
-    data = r.json()
-    products = data.get("products", [])
+    r = requests.get(KEEPA_PRODUCT_API, params=params, timeout=30)
+    if r.status_code == 429:
+        print(f"[429] rate limited → skip stats {asin}")
+        return None
+    if r.status_code != 200:
+        print(f"[ERROR] HTTP {r.status_code} stats {asin}")
+        return None
+    products = r.json().get("products")
     return products[0] if products else None
 
-# =====================
-# Main
-# =====================
+def fetch_keepa_product_with_offers(asin: str):
+    params = {
+        "key": KEEPA_API_KEY,
+        "domain": DOMAIN_JP,
+        "asin": asin,
+        "offers": 20,
+        "buybox": 1,
+        "update": 48,
+        "history": 0,
+    }
+    r = requests.get(KEEPA_PRODUCT_API, params=params, timeout=60)
+    if r.status_code == 429:
+        print(f"[429] rate limited → skip offers {asin}")
+        return None
+    if r.status_code != 200:
+        print(f"[ERROR] HTTP {r.status_code} offers {asin}")
+        return None
+    products = r.json().get("products")
+    return products[0] if products else None
+
+def extract_price_from_offers(product: dict):
+    offers = product.get("offers") or []
+    latest_ts = -1
+    latest_price = None
+    for offer in offers:
+        csv = offer.get("offerCSV") or []
+        for i in range(0, len(csv), 3):
+            try:
+                ts, price, _ = csv[i:i+3]
+            except ValueError:
+                continue
+            if price > 0 and ts > latest_ts:
+                latest_ts = ts
+                latest_price = price
+    return latest_price
+
+def extract_image_url(product: dict):
+    images_csv = product.get("imagesCSV")
+    if not images_csv:
+        return None
+    return f"https://images-na.ssl-images-amazon.com/images/I/{images_csv.split(',')[0]}"
+
+def safe_get_current(stats: dict, index: int):
+    cur = stats.get("current")
+    if not cur or len(cur) <= index:
+        return None
+    return cur[index]
+
+def extract_latest_sales_rank(product: dict):
+    sales_ranks = product.get("salesRanks")
+    if not sales_ranks:
+        return None
+    last_category = list(sales_ranks.values())[-1]
+    if not last_category or len(last_category) < 2:
+        return None
+    return last_category[-1]
+
+def select_asins_by_priority():
+    res = (
+        supabase.table("v_asin_priority_jp")
+        .select("asin,priority_bucket,snapshot_count")
+        .limit(MAX_PER_RUN)
+        .execute()
+    )
+    rows = res.data or []
+    asins = [r["asin"] for r in rows if r.get("asin")]
+    print("[INFO] priority mix:",
+          {b: sum(1 for r in rows if r.get("priority_bucket") == b) for b in set(r.get("priority_bucket") for r in rows)})
+    return asins
 
 def main():
-    asins = fetch_target_asins()
-    print(f"[INFO] ASINs selected: {len(asins)}")
+    asins = select_asins_by_priority()
+    if not asins:
+        print("[SKIP] No ASINs selected")
+        return
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    upsert_products = []
+    insert_snapshots = []
 
     for asin in asins:
-        try:
-            product = fetch_keepa_product(asin)
-            if not product:
-                continue
+        product = fetch_keepa_product(asin)
+        if not product:
+            continue
 
-            stats = product.get("stats", {})
+        title = product.get("title")
+        if not title:
+            continue
 
-            snapshot = {
+        image_url = extract_image_url(product)
+
+        upsert_products.append(
+            {
                 "asin": asin,
-                "buybox_price": stats.get("buyBoxPrice"),
-                "sales_rank_latest": stats.get("salesRank"),
+                "title": title,
+                "imageUrl": image_url,
+                "locale": "jp",
+                "updated_at": now,
+            }
+        )
+
+        stats = product.get("stats", {})
+        price = stats.get("buyBoxPrice")
+
+        # 価格が取れない場合のみ offers で補完
+        if not isinstance(price, int) or price <= 0:
+            heavy = fetch_keepa_product_with_offers(asin)
+            if heavy:
+                price = extract_price_from_offers(heavy)
+
+        insert_snapshots.append(
+            {
+                "asin": asin,
+                "locale": "jp",
+                "buybox_price": price,
+                "rating": safe_get_current(stats, 2),
+                "review_count": safe_get_current(stats, 11),
+                "sales_rank_latest": extract_latest_sales_rank(product),
                 "sales_rank_drops30": stats.get("salesRankDrops30"),
                 "sales_rank_drops90": stats.get("salesRankDrops90"),
                 "sales_rank_drops180": stats.get("salesRankDrops180"),
-                "review_count": product.get("reviews"),
+                "captured_at": now,
             }
+        )
 
-            supabase.table("product_snapshots").insert(snapshot).execute()
+        time.sleep(1)
 
-            supabase.table("products").update(
-                {"updated_at": "now()"}
-            ).eq("asin", asin).execute()
+    if upsert_products:
+        supabase.table("products").upsert(
+            upsert_products,
+            on_conflict="asin"
+        ).execute()
+        print(f"[OK] upserted {len(upsert_products)} products")
 
-            time.sleep(1.2)  # Keepa safe interval
-
-        except Exception as e:
-            print(f"[ERROR] {asin}: {e}")
-            time.sleep(2)
+    if insert_snapshots:
+        supabase.table("product_snapshots").insert(insert_snapshots).execute()
+        print(f"[OK] inserted {len(insert_snapshots)} snapshots")
 
 if __name__ == "__main__":
     main()
