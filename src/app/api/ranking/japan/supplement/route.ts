@@ -1,3 +1,5 @@
+// uppbase\src\app\api\ranking\japan\supplement\route.ts
+
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -7,6 +9,8 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL!,
   ssl: { rejectUnauthorized: false },
 });
+
+const associateTag = process.env.AMAZON_ASSOCIATE_TAG || 'suppbase-22';
 
 export async function GET(req: NextRequest) {
   try {
@@ -43,11 +47,13 @@ export async function GET(req: NextRequest) {
         reviewCount: r.review_count,
         score: r.suppbase_score,
         imageUrl: r.image_url ?? null,
-        affiliateUrl: `https://www.amazon.co.jp/dp/${r.asin}`,
+        affiliateUrl: `https://www.amazon.co.jp/dp/${r.asin}?tag=${associateTag}`,
       })),
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+    console.error('[JP supplement ranking error]', msg);
+
     return NextResponse.json(
       { items: [], errorHint: msg },
       { status: 500 }

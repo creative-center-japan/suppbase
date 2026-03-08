@@ -11,6 +11,8 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
+const associateTag = process.env.AMAZON_ASSOCIATE_TAG || 'suppbase-22';
+
 export async function GET(req: NextRequest) {
   try {
     const sp = new URL(req.url).searchParams;
@@ -19,7 +21,7 @@ export async function GET(req: NextRequest) {
     const type = (sp.get('type') ?? 'wpi').toLowerCase();
     const limit = Number(sp.get('limit') ?? 10);
 
-    // 想定外の type を弾く（保険）
+    // 想定外の type を弾く
     if (!['wpi', 'soy'].includes(type)) {
       return NextResponse.json(
         { items: [], errorHint: 'invalid protein type' },
@@ -29,7 +31,7 @@ export async function GET(req: NextRequest) {
 
     const sql = `
       select
-        category_rank as rank,     -- ★ カテゴリ内順位
+        category_rank as rank,
         asin,
         title,
         brand,
@@ -56,16 +58,17 @@ export async function GET(req: NextRequest) {
         title: r.title,
         brand: r.brand ?? '',
         price: r.price,
-        rating: null, // 現在は未使用
+        rating: null,
         reviewCount: r.review_count,
         score: r.suppbase_score,
         imageUrl: r.image_url ?? null,
-        affiliateUrl: `https://www.amazon.co.jp/dp/${r.asin}`,
+        affiliateUrl: `https://www.amazon.co.jp/dp/${r.asin}?tag=${associateTag}`,
       })),
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error('[JP protein ranking error]', msg);
+
     return NextResponse.json(
       {
         items: [],
