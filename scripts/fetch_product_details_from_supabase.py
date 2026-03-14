@@ -76,12 +76,6 @@ def extract_image_url(product: dict):
         return None
     return f"https://images-na.ssl-images-amazon.com/images/I/{images_csv.split(',')[0]}"
 
-def safe_get_current(stats: dict, index: int):
-    cur = stats.get("current")
-    if not cur or len(cur) <= index:
-        return None
-    return cur[index]
-
 def extract_latest_sales_rank(product: dict):
     sales_ranks = product.get("salesRanks")
     if not sales_ranks:
@@ -90,6 +84,15 @@ def extract_latest_sales_rank(product: dict):
     if not last_category or len(last_category) < 2:
         return None
     return last_category[-1]
+
+def normalize_int(value, default=None):
+    if value is None:
+        return default
+    try:
+        value = int(value)
+        return value
+    except Exception:
+        return default
 
 def select_asins_by_priority():
     res = (
@@ -100,8 +103,13 @@ def select_asins_by_priority():
     )
     rows = res.data or []
     asins = [r["asin"] for r in rows if r.get("asin")]
-    print("[INFO] priority mix:",
-          {b: sum(1 for r in rows if r.get("priority_bucket") == b) for b in set(r.get("priority_bucket") for r in rows)})
+    print(
+        "[INFO] priority mix:",
+        {
+            b: sum(1 for r in rows if r.get("priority_bucket") == b)
+            for b in set(r.get("priority_bucket") for r in rows)
+        },
+    )
     return asins
 
 def main():
@@ -138,26 +146,35 @@ def main():
 
         stats = product.get("stats", {})
         price = stats.get("buyBoxPrice")
+        monthly_sold = normalize_int(product.get("monthlySold"), 0)
 
-        # 価格が取れない場合のみ offers で補完
         if not isinstance(price, int) or price <= 0:
             heavy = fetch_keepa_product_with_offers(asin)
             if heavy:
                 price = extract_price_from_offers(heavy)
+
+        if not isinstance(price, int) or price <= 0:
+            price = None
 
         insert_snapshots.append(
             {
                 "asin": asin,
                 "locale": "jp",
                 "buybox_price": price,
-                "rating": safe_get_current(stats, 2),
-                "review_count": safe_get_current(stats, 11),
+                "rating": None,
+                "review_count": None,
+                "monthly_sold": monthly_sold,
                 "sales_rank_latest": extract_latest_sales_rank(product),
-                "sales_rank_drops30": stats.get("salesRankDrops30"),
-                "sales_rank_drops90": stats.get("salesRankDrops90"),
-                "sales_rank_drops180": stats.get("salesRankDrops180"),
+                "sales_rank_drops30": normalize_int(stats.get("salesRankDrops30"), 0),
+                "sales_rank_drops90": normalize_int(stats.get("salesRankDrops90"), 0),
+                "sales_rank_drops180": normalize_int(stats.get("salesRankDrops180"), 0),
                 "captured_at": now,
             }
+        )
+
+        print(
+            f"[JP] {asin} | monthly_sold={monthly_sold} "
+            f"| drops30={stats.get('salesRankDrops30')} | price={price}"
         )
 
         time.sleep(1)
