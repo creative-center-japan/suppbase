@@ -27,24 +27,24 @@ export async function GET(req: NextRequest) {
     }
 
     const sql = `
-      select
-        category_rank as rank,
-        asin,
-        title,
-        brand,
-        price,
-        review_count,
-        image_url,
-        suppbase_score,
-        monthly_sold,
-        sales_rank_drops30,
-        sales_rank_drops90,
-        sales_rank_drops180
-      from v_ranking_us
-      where protein_type = $1
-      order by category_rank
-      limit $2
-    `;
+  select
+    rank,
+    asin,
+    title,
+    brand,
+    price,
+    review_count,
+    image_url,
+    suppbase_score,
+    monthly_sold,
+    sales_rank_drops30,
+    sales_rank_drops90,
+    sales_rank_drops180
+  from v_ranking_us
+  where protein_type = $1
+  order by rank
+  limit $2
+`;
 
     const { rows } = await pool.query(sql, [type, limit]);
 

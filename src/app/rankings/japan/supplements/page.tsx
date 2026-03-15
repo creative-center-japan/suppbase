@@ -48,7 +48,7 @@ export default function SupplementRankingPage() {
       </h1>
 
       <p className="text-center text-sm text-gray-500 mb-6">
-        ※ 本ランキングはサプリメント商品を対象としています。
+        ※ 価格・在庫情報は変動します。最新情報は Amazon 商品ページをご確認ください。
       </p>
 
       <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 mb-8 text-sm text-gray-700 leading-relaxed">
