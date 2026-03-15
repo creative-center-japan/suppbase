@@ -1,6 +1,9 @@
 'use client';
 // healthy-site/suppbase/src/components/RankingSection.tsx
 
+'use client';
+// healthy-site/suppbase/src/components/RankingSection.tsx
+
 type RankingItem = {
   rank: number;
   asin: string;
@@ -16,6 +19,7 @@ type RankingItem = {
   salesRankDrops30?: number | null;
   salesRankDrops90?: number | null;
   salesRankDrops180?: number | null;
+  proteinType?: string | null;
 };
 
 type Props = {
@@ -86,17 +90,17 @@ export default function RankingSection({ items, loading }: Props) {
         const scoreText =
           typeof item.score === 'number'
             ? item.score.toLocaleString()
-            : '—';
+            : '集計中';
 
         const monthlySoldText =
-          typeof item.monthlySold === 'number' && item.monthlySold > 0
+          typeof item.monthlySold === 'number'
             ? item.monthlySold.toLocaleString()
-            : '—';
+            : 'データなし';
 
         const drops30Text =
-          typeof item.salesRankDrops30 === 'number' && item.salesRankDrops30 >= 0
+          typeof item.salesRankDrops30 === 'number'
             ? item.salesRankDrops30.toLocaleString()
-            : '—';
+            : 'データなし';
 
         return (
           <div
