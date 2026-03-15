@@ -1,6 +1,9 @@
 'use client';
 // healthy-site/suppbase/src/components/RankingSection.tsx
 
+'use client';
+// healthy-site/suppbase/src/components/RankingSection.tsx
+
 type RankingItem = {
   rank: number;
   asin: string;
@@ -12,6 +15,10 @@ type RankingItem = {
   imageUrl: string | null;
   affiliateUrl: string;
   score?: number | null;
+  monthlySold?: number | null;
+  salesRankDrops30?: number | null;
+  salesRankDrops90?: number | null;
+  salesRankDrops180?: number | null;
 };
 
 type Props = {
@@ -22,9 +29,7 @@ type Props = {
 const fallbackImage = '/no-image.png';
 
 /**
- * ★ Tailwind purge 対策
- * ここに class 名をベタ書きしておくことで
- * 本番ビルドでも確実に反映される
+ * Tailwind purge 対策
  */
 const RANK_STYLE_MAP: Record<
   number,
@@ -79,16 +84,6 @@ export default function RankingSection({ items, loading }: Props) {
         const bgColor = rankStyle?.bg ?? 'bg-white';
         const rankBg = rankStyle?.badge ?? 'bg-gray-200 text-gray-700';
 
-        const ratingText =
-          typeof item.rating === 'number' && item.rating >= 0
-            ? `★${item.rating.toFixed(1)}`
-            : '★—';
-
-        const reviewText =
-          typeof item.reviewCount === 'number'
-            ? `${item.reviewCount.toLocaleString()}件`
-            : '—件';
-
         const priceText =
           typeof item.price === 'number' && item.price > 0
             ? `¥${item.price.toLocaleString()}`
@@ -98,6 +93,16 @@ export default function RankingSection({ items, loading }: Props) {
           typeof item.score === 'number'
             ? item.score.toLocaleString()
             : null;
+
+        const monthlySoldText =
+          typeof item.monthlySold === 'number' && item.monthlySold > 0
+            ? `${item.monthlySold.toLocaleString()}`
+            : '—';
+
+        const drops30Text =
+          typeof item.salesRankDrops30 === 'number' && item.salesRankDrops30 >= 0
+            ? `${item.salesRankDrops30.toLocaleString()}`
+            : '—';
 
         return (
           <div
@@ -138,29 +143,39 @@ export default function RankingSection({ items, loading }: Props) {
                   {priceText}
                 </span>
 
-                {/* レビュー */}
-                <span className="flex items-center gap-1 text-green-700">
-                  <span className="font-semibold">{ratingText}</span>
-                  <span className="text-gray-500">
-                    ({reviewText})
-                  </span>
+                {/* 月間販売目安 */}
+                <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full text-xs font-medium">
+                  月間販売目安 {monthlySoldText}
+                </span>
+
+                {/* 直近30日ランキング変動 */}
+                <span className="bg-orange-50 text-orange-700 px-2 py-0.5 rounded-full text-xs font-medium">
+                  直近30日変動 {drops30Text}回
                 </span>
 
                 {/* スコア */}
                 {scoreText ? (
-                  <span className="bg-green-100 text-green-800
-                                   px-2 py-0.5 rounded-full
-                                   text-xs font-bold">
+                  <span
+                    className="bg-green-100 text-green-800
+                               px-2 py-0.5 rounded-full
+                               text-xs font-bold"
+                  >
                     SuppBaseスコア {scoreText}
                   </span>
                 ) : (
-                  <span className="bg-green-50 text-green-700
-                                   px-2 py-0.5 rounded-full
-                                   text-xs font-medium">
+                  <span
+                    className="bg-green-50 text-green-700
+                               px-2 py-0.5 rounded-full
+                               text-xs font-medium"
+                  >
                     SuppBaseスコア 集計中
                   </span>
                 )}
               </div>
+
+              <p className="text-xs text-gray-500 mt-3 leading-relaxed">
+                ※ 直近30日のランキング変動回数と月間販売数の目安をもとに整理しています。
+              </p>
             </div>
 
             {/* ボタン */}
@@ -168,7 +183,7 @@ export default function RankingSection({ items, loading }: Props) {
               <a
                 href={item.affiliateUrl}
                 target="_blank"
-                rel="noopener noreferrer"
+                rel="nofollow sponsored noopener noreferrer"
                 className="inline-block bg-green-600 hover:bg-green-700
                            text-white text-sm font-semibold
                            px-4 py-2 rounded-lg transition"
