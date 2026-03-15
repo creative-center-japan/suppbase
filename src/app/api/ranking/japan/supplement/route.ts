@@ -19,20 +19,22 @@ export async function GET(req: NextRequest) {
 
     const sql = `
       select
-        category_rank as rank,
-        asin,
-        title,
-        brand,
-        price,
-        review_count,
-        image_url,
-        suppbase_score,
-        monthly_sold,
-        sales_rank_drops30,
-        sales_rank_drops90,
-        sales_rank_drops180
-      from v_ranking_japan_bcaa_eaa
-      order by category_rank
+        b.category_rank as rank,
+        b.asin,
+        b.title,
+        b.brand,
+        b.price,
+        b.review_count,
+        b.image_url,
+        b.suppbase_score,
+        k.monthly_sold,
+        k.sales_rank_drops30,
+        k.sales_rank_drops90,
+        k.sales_rank_drops180
+      from v_ranking_japan_bcaa_eaa b
+      left join v_ranking_latest_keepa k
+        on k.asin = b.asin
+      order by b.category_rank
       limit $1
     `;
 
@@ -48,7 +50,7 @@ export async function GET(req: NextRequest) {
         brand: r.brand ?? '',
         price: r.price,
         rating: null,
-        reviewCount: r.review_count,
+        reviewCount: null,
         score: r.suppbase_score,
         imageUrl: r.image_url ?? null,
         monthlySold: r.monthly_sold ?? 0,

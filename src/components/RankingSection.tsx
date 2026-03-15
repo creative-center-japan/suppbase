@@ -1,9 +1,6 @@
 'use client';
 // healthy-site/suppbase/src/components/RankingSection.tsx
 
-'use client';
-// healthy-site/suppbase/src/components/RankingSection.tsx
-
 type RankingItem = {
   rank: number;
   asin: string;
@@ -28,9 +25,6 @@ type Props = {
 
 const fallbackImage = '/no-image.png';
 
-/**
- * Tailwind purge 対策
- */
 const RANK_STYLE_MAP: Record<
   number,
   {
@@ -92,16 +86,16 @@ export default function RankingSection({ items, loading }: Props) {
         const scoreText =
           typeof item.score === 'number'
             ? item.score.toLocaleString()
-            : null;
+            : '—';
 
         const monthlySoldText =
           typeof item.monthlySold === 'number' && item.monthlySold > 0
-            ? `${item.monthlySold.toLocaleString()}`
+            ? item.monthlySold.toLocaleString()
             : '—';
 
         const drops30Text =
           typeof item.salesRankDrops30 === 'number' && item.salesRankDrops30 >= 0
-            ? `${item.salesRankDrops30.toLocaleString()}`
+            ? item.salesRankDrops30.toLocaleString()
             : '—';
 
         return (
@@ -110,7 +104,6 @@ export default function RankingSection({ items, loading }: Props) {
             className={`flex items-center gap-4 border-2 ${borderColor} ${bgColor}
                         rounded-xl p-5 shadow-sm`}
           >
-            {/* 順位バッジ */}
             <div
               className={`flex items-center justify-center font-bold text-lg
                           w-10 h-10 rounded-full ${rankBg}`}
@@ -118,7 +111,6 @@ export default function RankingSection({ items, loading }: Props) {
               {item.rank}
             </div>
 
-            {/* 画像 */}
             <div className="w-28 h-28 flex-shrink-0 bg-white rounded border">
               <img
                 src={item.imageUrl || fallbackImage}
@@ -127,7 +119,6 @@ export default function RankingSection({ items, loading }: Props) {
               />
             </div>
 
-            {/* 情報 */}
             <div className="flex-1 min-w-0">
               <h3 className="font-semibold text-gray-900 leading-snug line-clamp-2">
                 #{item.rank} {item.title}
@@ -138,39 +129,21 @@ export default function RankingSection({ items, loading }: Props) {
               </p>
 
               <div className="mt-3 flex flex-wrap gap-3 text-sm items-center">
-                {/* 価格 */}
                 <span className="text-green-700 font-semibold">
                   {priceText}
                 </span>
 
-                {/* 月間販売目安 */}
                 <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full text-xs font-medium">
                   月間販売目安 {monthlySoldText}
                 </span>
 
-                {/* 直近30日ランキング変動 */}
                 <span className="bg-orange-50 text-orange-700 px-2 py-0.5 rounded-full text-xs font-medium">
                   直近30日変動 {drops30Text}回
                 </span>
 
-                {/* スコア */}
-                {scoreText ? (
-                  <span
-                    className="bg-green-100 text-green-800
-                               px-2 py-0.5 rounded-full
-                               text-xs font-bold"
-                  >
-                    SuppBaseスコア {scoreText}
-                  </span>
-                ) : (
-                  <span
-                    className="bg-green-50 text-green-700
-                               px-2 py-0.5 rounded-full
-                               text-xs font-medium"
-                  >
-                    SuppBaseスコア 集計中
-                  </span>
-                )}
+                <span className="bg-green-100 text-green-800 px-2 py-0.5 rounded-full text-xs font-bold">
+                  SuppBaseスコア {scoreText}
+                </span>
               </div>
 
               <p className="text-xs text-gray-500 mt-3 leading-relaxed">
@@ -178,7 +151,6 @@ export default function RankingSection({ items, loading }: Props) {
               </p>
             </div>
 
-            {/* ボタン */}
             <div className="flex-shrink-0">
               <a
                 href={item.affiliateUrl}
