@@ -16,13 +16,16 @@ type RankingItem = {
   imageUrl: string | null;
   affiliateUrl: string;
   score?: number | null;
+  monthlySold?: number | null;
+  salesRankDrops30?: number | null;
+  salesRankDrops90?: number | null;
+  salesRankDrops180?: number | null;
 };
 
 function getYearMonth() {
   const d = new Date();
   return `${d.getFullYear()}年${d.getMonth() + 1}月`;
 }
-
 
 export default function SupplementRankingPage() {
   const [items, setItems] = useState<RankingItem[]>([]);
@@ -47,6 +50,15 @@ export default function SupplementRankingPage() {
       <p className="text-center text-sm text-gray-500 mb-6">
         ※ 本ランキングはサプリメント商品を対象としています。
       </p>
+
+      <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 mb-8 text-sm text-gray-700 leading-relaxed">
+        このランキングは、主に
+        <span className="font-semibold">直近30日のランキング変動回数</span>と
+        <span className="font-semibold">月間販売数の目安</span>
+        をもとに整理しています。
+        <br />
+        最近よく動いている商品や、販売規模のある商品が上位に来やすい構成です。
+      </div>
 
       <RankingSection items={items} loading={loading} />
     </main>

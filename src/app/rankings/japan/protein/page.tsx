@@ -16,6 +16,10 @@ type RankingItem = {
   imageUrl: string | null;
   affiliateUrl: string;
   score?: number | null;
+  monthlySold?: number | null;
+  salesRankDrops30?: number | null;
+  salesRankDrops90?: number | null;
+  salesRankDrops180?: number | null;
 };
 
 function getYearMonth() {
@@ -53,11 +57,18 @@ export default function ProteinRankingPage() {
       </h1>
 
       <p className="text-center text-sm text-gray-500 mb-6">
-        ※ 価格・在庫・レビュー情報は変動します。最新情報は
-        Amazon 商品ページをご確認ください。
+        ※ 価格・在庫情報は変動します。最新情報は Amazon 商品ページをご確認ください。
       </p>
 
-      {/* タブ */}
+      <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 mb-8 text-sm text-gray-700 leading-relaxed">
+        このランキングは、主に
+        <span className="font-semibold">直近30日のランキング変動回数</span>と
+        <span className="font-semibold">月間販売数の目安</span>
+        をもとに整理しています。
+        <br />
+        最近よく動いている商品や、販売規模のある商品が上位に来やすい構成です。
+      </div>
+
       <div className="flex justify-center gap-3 mb-6">
         {TABS.map(tab => (
           <button
