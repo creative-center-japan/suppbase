@@ -57,7 +57,7 @@ export default function SupplementRankingPage() {
         <span className="font-semibold">月間販売数の目安</span>
         をもとに整理しています。
         <br />
-        最近よく動いている商品や、販売規模のある商品が上位に来やすい構成です。
+        最近よく売れている商品や、一定の販売数がある人気商品が上位に表示されやすい仕組みになっています。
       </div>
 
       <RankingSection items={items} loading={loading} />
