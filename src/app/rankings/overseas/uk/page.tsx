@@ -1,80 +1,24 @@
-// suppbase\src\app\rankings\overseas\uk\page.tsx
+export default function OverseasUKComingSoon() {
+  return (
+    <main className="min-h-[70vh] flex items-center justify-center bg-white px-4">
+      <div className="text-center max-w-xl">
+        <p className="text-sm tracking-widest text-gray-400 mb-4">
+          OVERSEAS RANKING
+        </p>
 
-export const runtime = 'nodejs';
+        <h1 className="text-4xl font-bold mb-6">
+          🇬🇧 United Kingdom
+        </h1>
 
-import { NextRequest, NextResponse } from 'next/server';
-import { Pool } from 'pg';
+        <p className="text-lg text-gray-600 mb-8">
+          イギリス市場のサプリ・プロテインランキングは<br />
+          現在準備中です。
+        </p>
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL!,
-  ssl: { rejectUnauthorized: false },
-});
-
-const associateTag = process.env.AMAZON_ASSOCIATE_TAG || 'suppbase-22';
-
-export async function GET(req: NextRequest) {
-  try {
-    const sp = new URL(req.url).searchParams;
-
-    const type = (sp.get('type') ?? 'wpi').toLowerCase();
-    const limit = Number(sp.get('limit') ?? 10);
-
-    if (!['wpi', 'soy'].includes(type)) {
-      return NextResponse.json(
-        { items: [], errorHint: 'invalid protein type' },
-        { status: 400 }
-      );
-    }
-
-    const sql = `
-      select
-        category_rank as rank,
-        asin,
-        title,
-        brand,
-        price,
-        review_count,
-        image_url,
-        suppbase_score,
-        monthly_sold,
-        sales_rank_drops30,
-        sales_rank_drops90,
-        sales_rank_drops180
-      from v_ranking_us
-      where protein_type = $1
-      order by category_rank
-      limit $2
-    `;
-
-    const { rows } = await pool.query(sql, [type, limit]);
-
-    return NextResponse.json({
-      description:
-        'US Amazon protein ranking based on 30-day rank movement and estimated monthly sales.',
-      items: rows.map(r => ({
-        rank: r.rank,
-        asin: r.asin,
-        title: r.title,
-        brand: r.brand ?? '',
-        price: r.price,
-        rating: null,
-        reviewCount: r.review_count,
-        score: r.suppbase_score,
-        imageUrl: r.image_url ?? null,
-        monthlySold: r.monthly_sold ?? 0,
-        salesRankDrops30: r.sales_rank_drops30 ?? 0,
-        salesRankDrops90: r.sales_rank_drops90 ?? 0,
-        salesRankDrops180: r.sales_rank_drops180 ?? 0,
-        affiliateUrl: `https://www.amazon.com/dp/${r.asin}?tag=${associateTag}`,
-      })),
-    });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error('[US ranking error]', msg);
-
-    return NextResponse.json(
-      { items: [], errorHint: msg },
-      { status: 500 }
-    );
-  }
+        <div className="inline-block border border-dashed rounded-lg px-6 py-3 text-gray-500">
+          Coming Soon
+        </div>
+      </div>
+    </main>
+  );
 }

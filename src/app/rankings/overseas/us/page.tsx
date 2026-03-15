@@ -1,26 +1,83 @@
 // healthy-site\suppbase\src\app\rankings\overseas\us\page.tsx
 
-export default function USProteinRankingComingSoon() {
+'use client';
+
+import { useEffect, useState } from 'react';
+import RankingSection from '@/components/RankingSection';
+
+type RankingItem = {
+  rank: number;
+  asin: string;
+  title: string;
+  brand: string;
+  price: number | null;
+  rating: number | null;
+  reviewCount: number | null;
+  imageUrl: string | null;
+  affiliateUrl: string;
+  score?: number | null;
+  monthlySold?: number | null;
+  salesRankDrops30?: number | null;
+};
+
+function getYearMonth() {
+  const d = new Date();
+  return `${d.getFullYear()}年${d.getMonth() + 1}月`;
+}
+
+const TABS = [
+  { id: 'wpi', label: 'WPI' },
+  { id: 'soy', label: 'Soy Protein' },
+];
+
+export default function USProteinRankingPage() {
+  const [activeTab, setActiveTab] = useState<'wpi' | 'soy'>('wpi');
+  const [items, setItems] = useState<RankingItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const ym = getYearMonth();
+
+  useEffect(() => {
+    setLoading(true);
+
+    fetch(`/api/ranking/us?type=${activeTab}&limit=10`, {
+      cache: 'no-store',
+    })
+      .then(r => r.json())
+      .then(d => setItems(Array.isArray(d.items) ? d.items : []))
+      .finally(() => setLoading(false));
+  }, [activeTab]);
+
   return (
-    <main className="min-h-[70vh] flex items-center justify-center bg-white px-4">
-      <div className="text-center max-w-xl">
-        <p className="text-sm tracking-widest text-gray-400 mb-4">
-          OVERSEAS RANKING
-        </p>
+    <main className="max-w-5xl mx-auto px-4 py-10">
 
-        <h1 className="text-4xl font-bold mb-6">
-          🇺🇸 United States
-        </h1>
+      <h1 className="text-3xl font-bold mb-2 text-center">
+        US Protein Ranking【{ym}】
+      </h1>
 
-        <p className="text-lg text-gray-600 mb-8">
-          US プロテインランキングは<br />
-          現在準備中です。
-        </p>
+      <p className="text-center text-sm text-gray-500 mb-6">
+        Based on Keepa data: 30-day rank movement and estimated monthly sales.
+      </p>
 
-        <div className="inline-block border border-dashed rounded-lg px-6 py-3 text-gray-500">
-          Coming Soon
-        </div>
+      <div className="flex justify-center gap-3 mb-6">
+        {TABS.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id as 'wpi' | 'soy')}
+            className={`px-4 py-2 rounded-full text-sm font-semibold border
+              ${
+                activeTab === tab.id
+                  ? 'bg-green-600 text-white border-green-600'
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+              }`}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
+
+      <RankingSection items={items} loading={loading} />
+
     </main>
   );
 }
