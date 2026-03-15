@@ -18,6 +18,8 @@ type RankingItem = {
   score?: number | null;
   monthlySold?: number | null;
   salesRankDrops30?: number | null;
+  salesRankDrops90?: number | null;
+  salesRankDrops180?: number | null;
 };
 
 function getYearMonth() {
@@ -27,7 +29,7 @@ function getYearMonth() {
 
 const TABS = [
   { id: 'wpi', label: 'WPI' },
-  { id: 'soy', label: 'Soy Protein' },
+  { id: 'soy', label: 'ソイプロテイン' },
 ];
 
 export default function USProteinRankingPage() {
@@ -50,14 +52,22 @@ export default function USProteinRankingPage() {
 
   return (
     <main className="max-w-5xl mx-auto px-4 py-10">
-
       <h1 className="text-3xl font-bold mb-2 text-center">
-        US Protein Ranking【{ym}】
+        アメリカ プロテインランキング【{ym}】
       </h1>
 
       <p className="text-center text-sm text-gray-500 mb-6">
-        Based on Keepa data: 30-day rank movement and estimated monthly sales.
+        ※ 米国Amazonの公開データをもとに整理しています。
       </p>
+
+      <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 mb-8 text-sm text-gray-700 leading-relaxed">
+        このランキングは、主に
+        <span className="font-semibold">直近30日のランキング変動回数</span>と
+        <span className="font-semibold">月間販売数の目安</span>
+        をもとに整理しています。
+        <br />
+        最近よく動いている商品や、販売規模のある商品が上位に来やすい構成です。
+      </div>
 
       <div className="flex justify-center gap-3 mb-6">
         {TABS.map(tab => (
@@ -77,7 +87,6 @@ export default function USProteinRankingPage() {
       </div>
 
       <RankingSection items={items} loading={loading} />
-
     </main>
   );
 }
