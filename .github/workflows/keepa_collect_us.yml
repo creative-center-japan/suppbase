@@ -12,7 +12,7 @@ jobs:
   collect-us:
     name: Collect US Products
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     steps:
       - name: Checkout repository
@@ -28,9 +28,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # =========================
-      # Ranking取得
-      # =========================
       - name: Fetch US ranking ASINs
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
@@ -38,19 +35,6 @@ jobs:
           QUERY_TITLE: protein powder
         run: |
           python scripts/fetch_ranking_asins_us.py
-
-      - name: Debug US ranking ASIN file
-        run: |
-          python - <<'PY'
-          import json, pathlib
-          p = pathlib.Path("asins_us_ranking.json")
-          print("[DEBUG] exists:", p.exists())
-          data = json.loads(p.read_text())
-          print("[DEBUG] type:", type(data).__name__)
-          if isinstance(data, list):
-              print("[DEBUG] count:", len(data))
-              print("[DEBUG] sample:", data[:10])
-          PY
 
       - name: Import US ranking ASINs to Supabase
         env:
@@ -63,44 +47,44 @@ jobs:
         run: |
           python scripts/import_asins_to_supabase.py
 
-      # =========================
-      # BestSeller取得（カテゴリID指定）
-      # =========================
-      - name: Fetch US best seller ASINs
+      - name: Fetch US whey best seller ASINs
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
           CATEGORY_ID: "6973717011"
-          OUT_FILE: asins_us_bestsellers.json
+          OUT_FILE: asins_us_bestsellers_whey.json
         run: |
           python scripts/fetch_best_sellers_asins_us.py
 
-      - name: Debug US best seller ASIN file
-        run: |
-          python - <<'PY'
-          import json, pathlib
-          p = pathlib.Path("asins_us_bestsellers.json")
-          print("[DEBUG] exists:", p.exists())
-          data = json.loads(p.read_text())
-          print("[DEBUG] type:", type(data).__name__)
-          if isinstance(data, list):
-              print("[DEBUG] count:", len(data))
-              print("[DEBUG] sample:", data[:10])
-          PY
-
-      - name: Import US best seller ASINs to Supabase
+      - name: Import US whey best seller ASINs to Supabase
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
-          ASIN_FILE: asins_us_bestsellers.json
-          CATEGORY: protein
+          ASIN_FILE: asins_us_bestsellers_whey.json
+          CATEGORY: whey
           LOCALE: us
           SOURCE: bestsellers
         run: |
           python scripts/import_asins_to_supabase.py
 
-      # =========================
-      # Tracking（rankingベース）
-      # =========================
+      - name: Fetch US soy best seller ASINs
+        env:
+          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+          CATEGORY_ID: "6973716011"
+          OUT_FILE: asins_us_bestsellers_soy.json
+        run: |
+          python scripts/fetch_best_sellers_asins_us.py
+
+      - name: Import US soy best seller ASINs to Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          ASIN_FILE: asins_us_bestsellers_soy.json
+          CATEGORY: soy
+          LOCALE: us
+          SOURCE: bestsellers
+        run: |
+          python scripts/import_asins_to_supabase.py
+
       - name: Add Keepa tracking for US ASINs
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
@@ -110,9 +94,6 @@ jobs:
         run: |
           python scripts/add_tracking.py
 
-      # =========================
-      # 商品詳細取得
-      # =========================
       - name: Fetch US product details from Supabase & Keepa
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
