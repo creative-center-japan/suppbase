@@ -12,7 +12,7 @@ MAX_PER_RUN = int(os.environ.get("MAX_PER_RUN", "40"))
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 KEEPA_PRODUCT_API = "https://api.keepa.com/product"
-DOMAIN_US = 1  # US
+DOMAIN_US = 1
 
 
 def fetch_keepa_product(asin: str):
@@ -85,16 +85,12 @@ def infer_protein_type(title: str) -> str | None:
 
     t = title.lower()
 
-    # soy
-    if "soy" in t or "soy protein" in t:
+    if "soy" in t:
         return "soy"
 
-    # WPI / isolate
     if "isolate" in t or "wpi" in t:
         return "wpi"
 
-    # US向け商品では "whey" だけのタイトルが多いので、
-    # ひとまず公開画面に載るよう wpi 側へ寄せる
     if "whey" in t or "whey protein" in t:
         return "wpi"
 
@@ -222,30 +218,18 @@ def main():
     print(f"  snapshot_count    : {len(snapshots)}")
 
     if upsert_products:
-        try:
-            result = (
-                supabase.table("products")
-                .upsert(upsert_products, on_conflict="asin")
-                .execute()
-            )
-            print(f"[OK][US] upserted {len(upsert_products)} products")
-            print(
-                f"[DEBUG][US] products response count: "
-                f"{len(result.data) if getattr(result, 'data', None) else 0}"
-            )
-        except Exception as e:
-            print(f"[ERROR][US] products upsert failed: {e}")
+        result = (
+            supabase.table("products")
+            .upsert(upsert_products, on_conflict="asin")
+            .execute()
+        )
+        print(f"[OK][US] upserted {len(upsert_products)} products")
+        print(f"[DEBUG][US] products response count: {len(result.data) if getattr(result, 'data', None) else 0}")
 
     if snapshots:
-        try:
-            result = supabase.table("product_snapshots").insert(snapshots).execute()
-            print(f"[OK][US] inserted {len(snapshots)} snapshots")
-            print(
-                f"[DEBUG][US] snapshots response count: "
-                f"{len(result.data) if getattr(result, 'data', None) else 0}"
-            )
-        except Exception as e:
-            print(f"[ERROR][US] snapshot insert failed: {e}")
+        result = supabase.table("product_snapshots").insert(snapshots).execute()
+        print(f"[OK][US] inserted {len(snapshots)} snapshots")
+        print(f"[DEBUG][US] snapshots response count: {len(result.data) if getattr(result, 'data', None) else 0}")
 
 
 if __name__ == "__main__":

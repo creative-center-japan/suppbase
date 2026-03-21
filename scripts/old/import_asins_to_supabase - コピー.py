@@ -7,9 +7,7 @@ SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE"]
 
 ASIN_FILE = os.environ.get("ASIN_FILE")
-CATEGORY = os.environ.get("CATEGORY", "protein")
-LOCALE = os.environ.get("LOCALE", "jp")
-SOURCE = os.environ.get("SOURCE", "manual")
+CATEGORY = os.environ.get("CATEGORY")
 
 if not ASIN_FILE:
     print("[ERROR] ASIN_FILE not set")
@@ -22,14 +20,7 @@ if not os.path.exists(ASIN_FILE):
     raise SystemExit(1)
 
 with open(ASIN_FILE, "r", encoding="utf-8") as f:
-    data = json.load(f)
-
-if isinstance(data, list):
-    asins = data
-elif isinstance(data, dict):
-    asins = data.get("asins", [])
-else:
-    asins = []
+    asins = json.load(f)
 
 if not asins:
     print("[SKIP] no asins")
@@ -38,22 +29,13 @@ if not asins:
 now = datetime.now(timezone.utc).isoformat()
 
 rows = []
-seen = set()
-
 for asin in asins:
     if not isinstance(asin, str):
         continue
 
-    asin = asin.strip().upper()
-    if not asin or asin in seen:
-        continue
-    seen.add(asin)
-
     rows.append({
         "asin": asin,
         "category": CATEGORY,
-        "locale": LOCALE,
-        "source": SOURCE,
         "first_seen_at": now,
         "last_seen_at": now,
         "is_active": True,
@@ -68,4 +50,4 @@ supabase.table("tracked_asins").upsert(
     on_conflict="asin"
 ).execute()
 
-print(f"[OK] imported {len(rows)} asins with locale={LOCALE}, source={SOURCE}")
+print(f"[OK] imported {len(rows)} asins with timestamp")

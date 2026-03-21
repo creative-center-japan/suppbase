@@ -7,25 +7,18 @@ import time
 KEEPA_API_KEY = os.environ["KEEPA_API_KEY"]
 API_URL = "https://api.keepa.com/tracking"
 
-MAIN_DOMAIN_ID = int(os.environ.get("MAIN_DOMAIN_ID", "5"))
-MAX_TRACKING = int(os.environ.get("MAX_TRACKING", "50"))
+MAIN_DOMAIN_ID = 5
+MAX_TRACKING = 50
 ASIN_PATTERN = re.compile(r"^[A-Z0-9]{10}$")
 
-IN_FILE = os.environ.get("IN_FILE", "asins_protein.json")
-
-if not os.path.exists(IN_FILE):
-    print(f"[SKIP] input file not found: {IN_FILE}")
-    raise SystemExit(0)
+IN_FILE = "asins_protein.json"
 
 with open(IN_FILE, "r", encoding="utf-8") as f:
     raw_asins = json.load(f)
 
-if isinstance(raw_asins, dict):
-    raw_asins = raw_asins.get("asins", [])
-
+# 正規ASINのみ
 asins = []
 seen = set()
-
 for a in raw_asins:
     if isinstance(a, str):
         a = a.strip().upper()
@@ -66,12 +59,11 @@ for asin in asins:
         print(f"[OK] tracking added: {asin}")
     else:
         failed += 1
-        try:
-            body = r.text[:300]
-        except Exception:
-            body = ""
-        print(f"[SKIP] tracking failed: {asin} status={r.status_code} body={body}")
+        print(f"[SKIP] tracking failed: {asin}")
+        # invalid ASIN は無視して続行
+        time.sleep(1)
+        continue
 
-    time.sleep(1)
+    time.sleep(1)  # Keepa対策
 
-print(f"[DONE] tracking success={success}, failed={failed}, domain={MAIN_DOMAIN_ID}")
+print(f"[DONE] tracking success={success}, failed={failed}")
