@@ -36,6 +36,34 @@ jobs:
         run: |
           python scripts/fetch_ranking_asins_us.py
 
+      - name: Debug US ranking ASIN file
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("asins_us_ranking.json")
+          print(f"[DEBUG] exists={path.exists()} file={path}")
+
+          if not path.exists():
+              raise SystemExit(1)
+
+          data = json.loads(path.read_text(encoding="utf-8"))
+          print(f"[DEBUG] type={type(data).__name__}")
+
+          if isinstance(data, list):
+              print(f"[DEBUG] count={len(data)}")
+              print(f"[DEBUG] sample={data[:10]}")
+          elif isinstance(data, dict):
+              print(f"[DEBUG] keys={list(data.keys())}")
+              for k, v in data.items():
+                  if isinstance(v, list):
+                      print(f"[DEBUG] {k} count={len(v)}")
+                      print(f"[DEBUG] {k} sample={v[:10]}")
+          else:
+              print(f"[DEBUG] raw={data}")
+          PY
+
       - name: Import US ranking ASINs to Supabase
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -55,6 +83,34 @@ jobs:
         run: |
           python scripts/fetch_best_sellers_asins_us.py
 
+      - name: Debug US best seller ASIN file
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("asins_us_bestsellers.json")
+          print(f"[DEBUG] exists={path.exists()} file={path}")
+
+          if not path.exists():
+              raise SystemExit(1)
+
+          data = json.loads(path.read_text(encoding="utf-8"))
+          print(f"[DEBUG] type={type(data).__name__}")
+
+          if isinstance(data, list):
+              print(f"[DEBUG] count={len(data)}")
+              print(f"[DEBUG] sample={data[:10]}")
+          elif isinstance(data, dict):
+              print(f"[DEBUG] keys={list(data.keys())}")
+              for k, v in data.items():
+                  if isinstance(v, list):
+                      print(f"[DEBUG] {k} count={len(v)}")
+                      print(f"[DEBUG] {k} sample={v[:10]}")
+          else:
+              print(f"[DEBUG] raw={data}")
+          PY
+
       - name: Import US best seller ASINs to Supabase
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -71,7 +127,7 @@ jobs:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
           MAIN_DOMAIN_ID: "1"
           MAX_TRACKING: "50"
-          IN_FILE: asins_us_ranking.json
+          IN_FILE: asins_us_bestsellers.json
         run: |
           python scripts/add_tracking.py
 
