@@ -28,6 +28,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      # =========================
+      # Ranking取得
+      # =========================
       - name: Fetch US ranking ASINs
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
@@ -39,29 +42,14 @@ jobs:
       - name: Debug US ranking ASIN file
         run: |
           python - <<'PY'
-          import json
-          from pathlib import Path
-
-          path = Path("asins_us_ranking.json")
-          print(f"[DEBUG] exists={path.exists()} file={path}")
-
-          if not path.exists():
-              raise SystemExit(1)
-
-          data = json.loads(path.read_text(encoding="utf-8"))
-          print(f"[DEBUG] type={type(data).__name__}")
-
+          import json, pathlib
+          p = pathlib.Path("asins_us_ranking.json")
+          print("[DEBUG] exists:", p.exists())
+          data = json.loads(p.read_text())
+          print("[DEBUG] type:", type(data).__name__)
           if isinstance(data, list):
-              print(f"[DEBUG] count={len(data)}")
-              print(f"[DEBUG] sample={data[:10]}")
-          elif isinstance(data, dict):
-              print(f"[DEBUG] keys={list(data.keys())}")
-              for k, v in data.items():
-                  if isinstance(v, list):
-                      print(f"[DEBUG] {k} count={len(v)}")
-                      print(f"[DEBUG] {k} sample={v[:10]}")
-          else:
-              print(f"[DEBUG] raw={data}")
+              print("[DEBUG] count:", len(data))
+              print("[DEBUG] sample:", data[:10])
           PY
 
       - name: Import US ranking ASINs to Supabase
@@ -75,10 +63,13 @@ jobs:
         run: |
           python scripts/import_asins_to_supabase.py
 
+      # =========================
+      # BestSeller取得（カテゴリID指定）
+      # =========================
       - name: Fetch US best seller ASINs
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
-          CATEGORY_ID: ${{ secrets.KEEPA_US_PROTEIN_CATEGORY_ID }}
+          CATEGORY_ID: "6973717011"
           OUT_FILE: asins_us_bestsellers.json
         run: |
           python scripts/fetch_best_sellers_asins_us.py
@@ -86,29 +77,14 @@ jobs:
       - name: Debug US best seller ASIN file
         run: |
           python - <<'PY'
-          import json
-          from pathlib import Path
-
-          path = Path("asins_us_bestsellers.json")
-          print(f"[DEBUG] exists={path.exists()} file={path}")
-
-          if not path.exists():
-              raise SystemExit(1)
-
-          data = json.loads(path.read_text(encoding="utf-8"))
-          print(f"[DEBUG] type={type(data).__name__}")
-
+          import json, pathlib
+          p = pathlib.Path("asins_us_bestsellers.json")
+          print("[DEBUG] exists:", p.exists())
+          data = json.loads(p.read_text())
+          print("[DEBUG] type:", type(data).__name__)
           if isinstance(data, list):
-              print(f"[DEBUG] count={len(data)}")
-              print(f"[DEBUG] sample={data[:10]}")
-          elif isinstance(data, dict):
-              print(f"[DEBUG] keys={list(data.keys())}")
-              for k, v in data.items():
-                  if isinstance(v, list):
-                      print(f"[DEBUG] {k} count={len(v)}")
-                      print(f"[DEBUG] {k} sample={v[:10]}")
-          else:
-              print(f"[DEBUG] raw={data}")
+              print("[DEBUG] count:", len(data))
+              print("[DEBUG] sample:", data[:10])
           PY
 
       - name: Import US best seller ASINs to Supabase
@@ -122,15 +98,21 @@ jobs:
         run: |
           python scripts/import_asins_to_supabase.py
 
+      # =========================
+      # Tracking（rankingベース）
+      # =========================
       - name: Add Keepa tracking for US ASINs
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
           MAIN_DOMAIN_ID: "1"
           MAX_TRACKING: "50"
-          IN_FILE: asins_us_bestsellers.json
+          IN_FILE: asins_us_ranking.json
         run: |
           python scripts/add_tracking.py
 
+      # =========================
+      # 商品詳細取得
+      # =========================
       - name: Fetch US product details from Supabase & Keepa
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
