@@ -23,6 +23,7 @@ def fetch_keepa_product(asin: str):
         "stats": 180,
         "history": 0,
     }
+
     try:
         r = requests.get(KEEPA_PRODUCT_API, params=params, timeout=30)
     except Exception as e:
@@ -37,49 +38,29 @@ def fetch_keepa_product(asin: str):
         print(f"[ERROR][US] HTTP {r.status_code} for {asin}")
         return None
 
-    try:
-        products = r.json().get("products")
-    except Exception as e:
-        print(f"[ERROR][US] invalid json for {asin}: {e}")
-        return None
-
+    products = r.json().get("products")
     return products[0] if products else None
 
 
-def extract_image_url(product: dict):
-    images_csv = product.get("imagesCSV")
-    if not images_csv:
+def extract_image_url(product):
+    images = product.get("imagesCSV")
+    if not images:
         return None
-    first_image = images_csv.split(",")[0].strip()
-    if not first_image:
-        return None
-    return f"https://images-na.ssl-images-amazon.com/images/I/{first_image}"
+    return f"https://images-na.ssl-images-amazon.com/images/I/{images.split(',')[0]}"
 
 
-def extract_latest_sales_rank(product: dict):
+def extract_sales_rank(product):
     ranks = product.get("salesRanks")
     if not ranks:
         return None
-
     try:
-        last_cat = list(ranks.values())[-1]
-        if not last_cat or len(last_cat) < 2:
-            return None
-        return last_cat[-1]
-    except Exception:
+        last = list(ranks.values())[-1]
+        return last[-1]
+    except:
         return None
 
 
-def normalize_int(value, default=None):
-    if value is None:
-        return default
-    try:
-        return int(value)
-    except Exception:
-        return default
-
-
-def infer_protein_type(title: str) -> str | None:
+def infer_protein_type(title):
     if not title:
         return None
 
@@ -87,149 +68,86 @@ def infer_protein_type(title: str) -> str | None:
 
     if "soy" in t:
         return "soy"
-
     if "isolate" in t or "wpi" in t:
         return "wpi"
-
-    if "whey" in t or "whey protein" in t:
+    if "whey" in t:
         return "wpi"
 
     return None
 
 
 def select_asins():
-    try:
-        res = (
-            supabase.table("v_asin_priority_us")
-            .select("asin,priority_bucket,snapshot_count")
-            .limit(MAX_PER_RUN)
-            .execute()
-        )
-    except Exception as e:
-        print(f"[ERROR][US] failed to query v_asin_priority_us: {e}")
-        return []
+    res = (
+        supabase.table("v_asin_priority_us")
+        .select("asin")
+        .limit(MAX_PER_RUN)
+        .execute()
+    )
 
-    rows = res.data or []
-    asins = [r["asin"] for r in rows if r.get("asin")]
-
-    bucket_summary = {}
-    for r in rows:
-        b = r.get("priority_bucket")
-        bucket_summary[b] = bucket_summary.get(b, 0) + 1
-
-    print(f"[INFO][US] selected rows: {len(rows)}")
-    print(f"[INFO][US] selected asins: {len(asins)}")
-    print(f"[INFO][US] priority mix: {bucket_summary}")
-
-    return asins
+    return [r["asin"] for r in res.data or []]
 
 
 def main():
     asins = select_asins()
+
     if not asins:
         print("[US] no ASINs selected")
         return
 
     now = datetime.now(timezone.utc).isoformat()
 
-    upsert_products = []
+    products = []
     snapshots = []
 
-    success_count = 0
-    skipped_no_product = 0
-    skipped_no_title = 0
-    type_none_count = 0
+    for asin in asins:
+        print(f"[US] processing {asin}")
 
-    for idx, asin in enumerate(asins, start=1):
-        print(f"[INFO][US] processing {idx}/{len(asins)}: {asin}")
-
-        product = fetch_keepa_product(asin)
-        if not product:
-            skipped_no_product += 1
+        p = fetch_keepa_product(asin)
+        if not p:
             continue
 
-        title = product.get("title")
+        title = p.get("title")
         if not title:
-            print(f"[SKIP][US] no title: {asin}")
-            skipped_no_title += 1
             continue
 
-        brand = product.get("brand") or ""
-        stats = product.get("stats", {}) or {}
-        image_url = extract_image_url(product)
+        stats = p.get("stats", {}) or {}
 
-        monthly_sold = normalize_int(product.get("monthlySold"), 0)
-        sales_rank_latest = extract_latest_sales_rank(product)
-        sales_rank_drops30 = normalize_int(stats.get("salesRankDrops30"), 0)
-        sales_rank_drops90 = normalize_int(stats.get("salesRankDrops90"), 0)
-        sales_rank_drops180 = normalize_int(stats.get("salesRankDrops180"), 0)
+        product_row = {
+            "asin": asin,
+            "locale": "us",
+            "title": title,
+            "brand": p.get("brand"),
+            "imageUrl": extract_image_url(p),
+            "protein_type": infer_protein_type(title),
+            "updated_at": now,
+        }
 
-        price = stats.get("buyBoxPrice")
-        if not isinstance(price, int) or price <= 0:
-            price = None
+        snapshot_row = {
+            "asin": asin,
+            "locale": "us",
+            "buybox_price": stats.get("buyBoxPrice"),
+            "sales_rank_latest": extract_sales_rank(p),
+            "monthly_sold": p.get("monthlySold"),
+            "captured_at": now,
+        }
 
-        protein_type = infer_protein_type(title)
-        if protein_type is None:
-            type_none_count += 1
+        products.append(product_row)
+        snapshots.append(snapshot_row)
 
-        upsert_products.append(
-            {
-                "asin": asin,
-                "title": title,
-                "brand": brand,
-                "imageUrl": image_url,
-                "locale": "us",
-                "protein_type": protein_type,
-                "updated_at": now,
-            }
-        )
-
-        snapshots.append(
-            {
-                "asin": asin,
-                "locale": "us",
-                "buybox_price": price,
-                "rating": None,
-                "review_count": None,
-                "monthly_sold": monthly_sold,
-                "sales_rank_latest": sales_rank_latest,
-                "sales_rank_drops30": sales_rank_drops30,
-                "sales_rank_drops90": sales_rank_drops90,
-                "sales_rank_drops180": sales_rank_drops180,
-                "captured_at": now,
-            }
-        )
-
-        print(
-            f"[US] {asin} | type={protein_type} | monthly_sold={monthly_sold} "
-            f"| sales_rank_latest={sales_rank_latest} | drops30={sales_rank_drops30} | price={price}"
-        )
-
-        success_count += 1
         time.sleep(1)
 
-    print("[INFO][US] collection summary:")
-    print(f"  selected_asins    : {len(asins)}")
-    print(f"  fetched_products  : {success_count}")
-    print(f"  skipped_no_product: {skipped_no_product}")
-    print(f"  skipped_no_title  : {skipped_no_title}")
-    print(f"  type_none_count   : {type_none_count}")
-    print(f"  upsert_count      : {len(upsert_products)}")
-    print(f"  snapshot_count    : {len(snapshots)}")
+    # ★ここが最重要修正
+    if products:
+        supabase.table("products").upsert(
+            products,
+            on_conflict="asin,locale"
+        ).execute()
 
-    if upsert_products:
-        result = (
-            supabase.table("products")
-            .upsert(upsert_products, on_conflict="asin")
-            .execute()
-        )
-        print(f"[OK][US] upserted {len(upsert_products)} products")
-        print(f"[DEBUG][US] products response count: {len(result.data) if getattr(result, 'data', None) else 0}")
+        print(f"[OK] upsert products: {len(products)}")
 
     if snapshots:
-        result = supabase.table("product_snapshots").insert(snapshots).execute()
-        print(f"[OK][US] inserted {len(snapshots)} snapshots")
-        print(f"[DEBUG][US] snapshots response count: {len(result.data) if getattr(result, 'data', None) else 0}")
+        supabase.table("product_snapshots").insert(snapshots).execute()
+        print(f"[OK] insert snapshots: {len(snapshots)}")
 
 
 if __name__ == "__main__":
