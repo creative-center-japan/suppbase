@@ -48,6 +48,19 @@ jobs:
           echo "MAX_PER_RUN=40" >> $GITHUB_ENV
 
       - name: Fetch ASINs
-        run: python fetch_best_sellers_asins_us.py
+        run: python scripts/fetch_best_sellers_asins_us.py
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+
+      - name: Import ASINs
+        run: python scripts/import_asins_to_supabase_us.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+
+      - name: Fetch product details
+        run: python scripts/fetch_product_details_from_supabase_us.py
+        env:
+          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
