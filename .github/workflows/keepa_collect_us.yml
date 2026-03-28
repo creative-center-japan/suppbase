@@ -28,8 +28,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests supabase
 
-      - name: Check files
-        run: ls -R
+      - name: Check pwd
+        run: pwd
+
+      - name: Check files in root
+        run: ls -la
+
+      - name: Check files recursive
+        run: find . -maxdepth 3 -type f | sort
 
       - name: Set ENV
         run: |
@@ -42,19 +48,6 @@ jobs:
           echo "MAX_PER_RUN=40" >> $GITHUB_ENV
 
       - name: Fetch ASINs
-        run: python ./fetch_best_sellers_asins_us.py
+        run: python fetch_best_sellers_asins_us.py
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
-
-      - name: Import ASINs
-        run: python ./import_asins_to_supabase_us.py
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
-
-      - name: Fetch product details
-        run: python ./fetch_product_details_from_supabase_us.py
-        env:
-          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
