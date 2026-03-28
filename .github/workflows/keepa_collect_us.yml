@@ -10,132 +10,46 @@ on:
 
 jobs:
   collect-us:
-    name: Collect US Products
     runs-on: ubuntu-latest
-    timeout-minutes: 20
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+      - name: Install deps
+        run: pip install requests supabase
 
-      - name: Fetch US ranking ASINs
+      # ★ここが重要（環境変数）
+      - name: Set ENV
+        run: |
+          echo "DOMAIN_ID=2" >> $GITHUB_ENV
+          echo "LOCALE=us" >> $GITHUB_ENV
+          echo "CATEGORY=wpi" >> $GITHUB_ENV
+          echo "CATEGORY_ID=6973717011" >> $GITHUB_ENV
+
+      # ★ASIN取得
+      - name: Fetch ASINs
+        run: python fetch_best_sellers_asins_us.py
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
-          OUT_FILE: asins_us_ranking.json
-          QUERY_TITLE: protein powder
-        run: |
-          python scripts/fetch_ranking_asins_us.py
 
-      - name: Debug US ranking ASIN file
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          path = Path("asins_us_ranking.json")
-          print(f"[DEBUG] exists={path.exists()} file={path}")
-
-          if not path.exists():
-              raise SystemExit(1)
-
-          data = json.loads(path.read_text(encoding="utf-8"))
-          print(f"[DEBUG] type={type(data).__name__}")
-
-          if isinstance(data, list):
-              print(f"[DEBUG] count={len(data)}")
-              print(f"[DEBUG] sample={data[:10]}")
-          elif isinstance(data, dict):
-              print(f"[DEBUG] keys={list(data.keys())}")
-              for k, v in data.items():
-                  if isinstance(v, list):
-                      print(f"[DEBUG] {k} count={len(v)}")
-                      print(f"[DEBUG] {k} sample={v[:10]}")
-          else:
-              print(f"[DEBUG] raw={data}")
-          PY
-
-      - name: Import US ranking ASINs to Supabase
+      # ★Supabase登録
+      - name: Import ASINs
+        run: python import_asins_to_supabase_us.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
-          ASIN_FILE: asins_us_ranking.json
-          CATEGORY: protein
-          LOCALE: us
-          SOURCE: ranking
-        run: |
-          python scripts/import_asins_to_supabase.py
+          ASIN_FILE: asins_us_bestsellers.json
 
-      - name: Fetch US whey best seller ASINs
+      # ★商品詳細取得（ここが重要）
+      - name: Fetch product details
+        run: python fetch_product_details_from_supabase_us.py
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
-          CATEGORY_ID: "6973717011"
-          OUT_FILE: asins_us_bestsellers_whey.json
-        run: |
-          python scripts/fetch_best_sellers_asins_us.py
-
-      - name: Debug US whey best seller ASIN file
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          path = Path("asins_us_bestsellers_whey.json")
-          print(f"[DEBUG] exists={path.exists()} file={path}")
-
-          if not path.exists():
-              raise SystemExit(1)
-
-          data = json.loads(path.read_text(encoding="utf-8"))
-          print(f"[DEBUG] type={type(data).__name__}")
-
-          if isinstance(data, list):
-              print(f"[DEBUG] count={len(data)}")
-              print(f"[DEBUG] sample={data[:10]}")
-          elif isinstance(data, dict):
-              print(f"[DEBUG] keys={list(data.keys())}")
-              for k, v in data.items():
-                  if isinstance(v, list):
-                      print(f"[DEBUG] {k} count={len(v)}")
-                      print(f"[DEBUG] {k} sample={v[:10]}")
-          else:
-              print(f"[DEBUG] raw={data}")
-          PY
-
-      - name: Import US whey best seller ASINs to Supabase
-        env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
-          ASIN_FILE: asins_us_bestsellers_whey.json
-          CATEGORY: whey
-          LOCALE: us
-          SOURCE: bestsellers
-        run: |
-          python scripts/import_asins_to_supabase.py
-
-      - name: Add Keepa tracking for US ASINs
-        env:
-          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
-          MAIN_DOMAIN_ID: "1"
-          MAX_TRACKING: "50"
-          IN_FILE: asins_us_ranking.json
-        run: |
-          python scripts/add_tracking.py
-
-      - name: Fetch US product details from Supabase & Keepa
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
-          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
-          MAX_PER_RUN: "40"
-        run: |
-          python scripts/fetch_product_details_from_supabase_us.py

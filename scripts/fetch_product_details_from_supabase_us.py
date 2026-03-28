@@ -12,7 +12,10 @@ MAX_PER_RUN = int(os.environ.get("MAX_PER_RUN", "40"))
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 KEEPA_PRODUCT_API = "https://api.keepa.com/product"
-DOMAIN_US = 1
+
+# Keepa domain: 1=JP, 2=US
+DOMAIN_US = int(os.environ.get("DOMAIN_ID", "2"))
+LOCALE = os.environ.get("LOCALE", "us").lower()
 
 
 def fetch_keepa_product(asin: str):
@@ -46,7 +49,10 @@ def extract_image_url(product):
     images = product.get("imagesCSV")
     if not images:
         return None
-    return f"https://images-na.ssl-images-amazon.com/images/I/{images.split(',')[0]}"
+    first_image = images.split(",")[0].strip()
+    if not first_image:
+        return None
+    return f"https://images-na.ssl-images-amazon.com/images/I/{first_image}"
 
 
 def extract_sales_rank(product):
@@ -54,13 +60,15 @@ def extract_sales_rank(product):
     if not ranks:
         return None
     try:
-        last = list(ranks.values())[-1]
-        return last[-1]
-    except:
+        last_rank_series = list(ranks.values())[-1]
+        if not last_rank_series:
+            return None
+        return last_rank_series[-1]
+    except Exception:
         return None
 
 
-def infer_protein_type(title):
+def infer_protein_type(title: str | None):
     if not title:
         return None
 
@@ -76,6 +84,27 @@ def infer_protein_type(title):
     return None
 
 
+def normalize_buybox_price(value):
+    if value in (None, -1):
+        return None
+    return value
+
+
+def normalize_monthly_sold(value):
+    if value in (None, -1):
+        return None
+    return value
+
+
+def build_score(product, stats):
+    drops30 = stats.get("salesRankDrops30") or 0
+    drops90 = stats.get("salesRankDrops90") or 0
+    reviews = product.get("reviewsCount") or 0
+
+    # monthlySold は US で欠損が多いためスコアから外す
+    return int(drops30 * 100 + drops90 * 50 + reviews * 2)
+
+
 def select_asins():
     res = (
         supabase.table("v_asin_priority_us")
@@ -83,8 +112,7 @@ def select_asins():
         .limit(MAX_PER_RUN)
         .execute()
     )
-
-    return [r["asin"] for r in res.data or []]
+    return [r["asin"] for r in (res.data or []) if r.get("asin")]
 
 
 def main():
@@ -100,6 +128,7 @@ def main():
     snapshots = []
 
     for asin in asins:
+        asin = asin.strip().upper()
         print(f"[US] processing {asin}")
 
         p = fetch_keepa_product(asin)
@@ -111,23 +140,25 @@ def main():
             continue
 
         stats = p.get("stats", {}) or {}
+        suppbase_score = build_score(p, stats)
 
         product_row = {
             "asin": asin,
-            "locale": "us",
+            "locale": LOCALE,
             "title": title,
             "brand": p.get("brand"),
             "imageUrl": extract_image_url(p),
             "protein_type": infer_protein_type(title),
+            "suppbase_score": suppbase_score,
             "updated_at": now,
         }
 
         snapshot_row = {
             "asin": asin,
-            "locale": "us",
-            "buybox_price": stats.get("buyBoxPrice"),
+            "locale": LOCALE,
+            "buybox_price": normalize_buybox_price(stats.get("buyBoxPrice")),
             "sales_rank_latest": extract_sales_rank(p),
-            "monthly_sold": p.get("monthlySold"),
+            "monthly_sold": normalize_monthly_sold(p.get("monthlySold")),
             "captured_at": now,
         }
 
@@ -136,18 +167,16 @@ def main():
 
         time.sleep(1)
 
-    # ★ここが最重要修正
     if products:
         supabase.table("products").upsert(
             products,
-            on_conflict="asin,locale"
+            on_conflict="asin,locale",
         ).execute()
-
-        print(f"[OK] upsert products: {len(products)}")
+        print(f"[OK][US] upsert products: {len(products)}")
 
     if snapshots:
         supabase.table("product_snapshots").insert(snapshots).execute()
-        print(f"[OK] insert snapshots: {len(snapshots)}")
+        print(f"[OK][US] insert snapshots: {len(snapshots)}")
 
 
 if __name__ == "__main__":
