@@ -46,11 +46,22 @@ jobs:
           echo "ASIN_FILE=asins_us_bestsellers.json" >> $GITHUB_ENV
           echo "OUT_FILE=asins_us_bestsellers.json" >> $GITHUB_ENV
           echo "MAX_PER_RUN=40" >> $GITHUB_ENV
+          echo "RETRY=3" >> $GITHUB_ENV
+          echo "SLEEP=60" >> $GITHUB_ENV
 
       - name: Fetch ASINs
         run: python scripts/fetch_best_sellers_asins_us.py
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+
+      - name: Show fetched ASIN file
+        run: |
+          echo "==== asins_us_bestsellers.json ===="
+          if [ -f "asins_us_bestsellers.json" ]; then
+            cat asins_us_bestsellers.json
+          else
+            echo "asins_us_bestsellers.json not found"
+          fi
 
       - name: Import ASINs
         run: python scripts/import_asins_to_supabase_us.py
