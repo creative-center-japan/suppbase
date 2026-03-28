@@ -100,8 +100,6 @@ def build_score(product, stats):
     drops30 = stats.get("salesRankDrops30") or 0
     drops90 = stats.get("salesRankDrops90") or 0
     reviews = product.get("reviewsCount") or 0
-
-    # monthlySold は US で欠損が多いためスコアから外す
     return int(drops30 * 100 + drops90 * 50 + reviews * 2)
 
 

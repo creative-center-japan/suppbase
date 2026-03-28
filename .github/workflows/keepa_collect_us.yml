@@ -10,7 +10,9 @@ on:
 
 jobs:
   collect-us:
+    name: Collect US Products
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -22,33 +24,36 @@ jobs:
           python-version: "3.11"
 
       - name: Install deps
-        run: pip install requests supabase
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests supabase
 
-      # ★ここが重要（環境変数）
+      - name: Check files
+        run: ls -R
+
       - name: Set ENV
         run: |
           echo "DOMAIN_ID=2" >> $GITHUB_ENV
           echo "LOCALE=us" >> $GITHUB_ENV
           echo "CATEGORY=wpi" >> $GITHUB_ENV
           echo "CATEGORY_ID=6973717011" >> $GITHUB_ENV
+          echo "ASIN_FILE=asins_us_bestsellers.json" >> $GITHUB_ENV
+          echo "OUT_FILE=asins_us_bestsellers.json" >> $GITHUB_ENV
+          echo "MAX_PER_RUN=40" >> $GITHUB_ENV
 
-      # ★ASIN取得
       - name: Fetch ASINs
-        run: python fetch_best_sellers_asins_us.py
+        run: python ./fetch_best_sellers_asins_us.py
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
 
-      # ★Supabase登録
       - name: Import ASINs
-        run: python import_asins_to_supabase_us.py
+        run: python ./import_asins_to_supabase_us.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
-          ASIN_FILE: asins_us_bestsellers.json
 
-      # ★商品詳細取得（ここが重要）
       - name: Fetch product details
-        run: python fetch_product_details_from_supabase_us.py
+        run: python ./fetch_product_details_from_supabase_us.py
         env:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
