@@ -1,5 +1,6 @@
 import os
 import time
+import re
 from datetime import datetime, timezone
 
 import requests
@@ -27,6 +28,7 @@ DOMAIN_MAP = {
     "jp": 5,
 }
 
+ASIN_PATTERN = re.compile(r"^[A-Z0-9]{10}$")
 KEEPA_BESTSELLER_API = "https://api.keepa.com/bestsellers"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -42,6 +44,51 @@ def validate():
         int(CATEGORY_ID)
     except Exception:
         raise ValueError(f"invalid CATEGORY_ID: {CATEGORY_ID}")
+
+
+def normalize_bestseller_response(data):
+    # 返り値候補を順に吸収
+    candidate = (
+        data.get("bestSellersList")
+        or data.get("asinList")
+        or data.get("asins")
+        or []
+    )
+
+    # case 1: すでに list
+    if isinstance(candidate, list):
+        raw_asins = candidate
+
+    # case 2: dict の中に asinList / asins がある
+    elif isinstance(candidate, dict):
+        raw_asins = (
+            candidate.get("asinList")
+            or candidate.get("asins")
+            or []
+        )
+
+    else:
+        raw_asins = []
+
+    cleaned = []
+    seen = set()
+
+    for asin in raw_asins:
+        if not isinstance(asin, str):
+            continue
+
+        a = asin.strip().upper()
+
+        if not ASIN_PATTERN.fullmatch(a):
+            continue
+
+        if a in seen:
+            continue
+
+        seen.add(a)
+        cleaned.append(a)
+
+    return cleaned[:TOP_N]
 
 
 def fetch_bestseller_asins():
@@ -66,33 +113,10 @@ def fetch_bestseller_asins():
         return []
 
     data = r.json()
+    print(f"[DEBUG] bestseller response keys={list(data.keys())}")
 
-    # Keepa返却差分吸収
-    asins = (
-        data.get("bestSellersList")
-        or data.get("asinList")
-        or data.get("asins")
-        or []
-    )
-
-    cleaned = []
-    seen = set()
-
-    for asin in asins:
-        if not isinstance(asin, str):
-            continue
-
-        a = asin.strip().upper()
-        if not a:
-            continue
-
-        if a in seen:
-            continue
-
-        seen.add(a)
-        cleaned.append(a)
-
-    return cleaned[:TOP_N]
+    asins = normalize_bestseller_response(data)
+    return asins
 
 
 def build_rows(asins):
