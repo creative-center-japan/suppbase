@@ -24,9 +24,9 @@ jobs:
 
       - name: Set ENV
         run: |
-          echo "MAX_PER_RUN=4" >> $GITHUB_ENV
-          echo "MAX_JP=2" >> $GITHUB_ENV
-          echo "MAX_US=2" >> $GITHUB_ENV
+          echo "MAX_PER_RUN=2" >> $GITHUB_ENV
+          echo "MAX_JP=1" >> $GITHUB_ENV
+          echo "MAX_US=1" >> $GITHUB_ENV
           echo "MAX_UK=0" >> $GITHUB_ENV
 
       - name: Run multi collection

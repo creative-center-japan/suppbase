@@ -7,11 +7,10 @@ from supabase import create_client
 KEEPA_API_KEY = os.environ["KEEPA_API_KEY"]
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE"]
-MAX_PER_RUN = int(os.environ.get("MAX_PER_RUN", "10"))
 
-# localeごとの取得件数上限
-MAX_JP = int(os.environ.get("MAX_JP", "6"))
-MAX_US = int(os.environ.get("MAX_US", "4"))
+MAX_PER_RUN = int(os.environ.get("MAX_PER_RUN", "4"))
+MAX_JP = int(os.environ.get("MAX_JP", "2"))
+MAX_US = int(os.environ.get("MAX_US", "2"))
 MAX_UK = int(os.environ.get("MAX_UK", "0"))
 
 DOMAIN_MAP = {
@@ -116,49 +115,37 @@ def build_score(product, stats):
     return int(drops30 * 100 + drops90 * 50 + reviews * 2)
 
 
-def select_asins():
-    query = """
-    select asin, locale, category, priority, locale_rank
-    from v_asin_priority_multi
-    where
-      (locale = 'jp' and locale_rank <= {max_jp})
-      or
-      (locale = 'us' and locale_rank <= {max_us})
-      or
-      (locale = 'uk' and locale_rank <= {max_uk})
-    order by
-      case locale
-        when 'jp' then 1
-        when 'us' then 2
-        when 'uk' then 3
-        else 9
-      end,
-      locale_rank
-    limit {max_per_run}
-    """.format(
-        max_jp=MAX_JP,
-        max_us=MAX_US,
-        max_uk=MAX_UK,
-        max_per_run=MAX_PER_RUN,
-    )
+def select_targets():
+    res = supabase.table("v_asin_priority_multi").select(
+        "asin, locale, category, priority, locale_rank"
+    ).execute()
 
-    res = supabase.rpc("run_sql", {"query": query}).execute()
-    return res.data or []
+    rows = res.data or []
+
+    jp = [r for r in rows if r.get("locale") == "jp" and (r.get("locale_rank") or 999999) <= MAX_JP]
+    us = [r for r in rows if r.get("locale") == "us" and (r.get("locale_rank") or 999999) <= MAX_US]
+    uk = [r for r in rows if r.get("locale") == "uk" and (r.get("locale_rank") or 999999) <= MAX_UK]
+
+    targets = (jp + us + uk)[:MAX_PER_RUN]
+    return targets
 
 
 def upsert_products(rows):
     if not rows:
         return
+
     supabase.table("products").upsert(
         rows,
         on_conflict="asin,locale",
     ).execute()
+
     print(f"[OK] upsert products: {len(rows)}")
 
 
 def insert_snapshots(rows):
     if not rows:
         return
+
     supabase.table("product_snapshots").insert(rows).execute()
     print(f"[OK] insert snapshots: {len(rows)}")
 
@@ -176,7 +163,7 @@ def update_last_checked(asins_by_locale, checked_at):
 
 
 def main():
-    targets = select_asins()
+    targets = select_targets()
 
     if not targets:
         print("[INFO] no ASINs selected")
@@ -209,6 +196,7 @@ def main():
 
         stats = p.get("stats", {}) or {}
         suppbase_score = build_score(p, stats)
+        sales_rank = extract_sales_rank(p)
 
         product_row = {
             "asin": asin,
@@ -216,6 +204,9 @@ def main():
             "title": title,
             "brand": p.get("brand"),
             "imageUrl": extract_image_url(p),
+            "reviewCount": p.get("reviewsCount"),
+            "salesRank": sales_rank,
+            "buyBoxPrice": normalize_buybox_price(stats.get("buyBoxPrice")),
             "protein_type": infer_protein_type(title),
             "suppbase_score": suppbase_score,
             "updated_at": now,
@@ -224,9 +215,9 @@ def main():
         snapshot_row = {
             "asin": asin,
             "locale": locale,
-            "buybox_price": normalize_buybox_price(stats.get("buyBoxPrice")),
-            "sales_rank_latest": extract_sales_rank(p),
             "monthly_sold": normalize_monthly_sold(p.get("monthlySold")),
+            "sales_rank_latest": sales_rank,
+            "buybox_price": normalize_buybox_price(stats.get("buyBoxPrice")),
             "captured_at": now,
         }
 
