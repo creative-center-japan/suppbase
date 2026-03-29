@@ -46,8 +46,15 @@ def validate():
         raise ValueError(f"invalid CATEGORY_ID: {CATEGORY_ID}")
 
 
-def normalize_bestseller_response(data):
-    # 返り値候補を順に吸収
+def normalize_bestseller_response(data: dict) -> list[str]:
+    """
+    Keepaのbestseller APIは返却形式が揺れることがあるため、
+    以下のようなケースを吸収する:
+      - {"bestSellersList": ["B0...", ...]}
+      - {"bestSellersList": {"asinList": ["B0...", ...], ...}}
+      - {"asinList": ["B0...", ...]}
+      - {"asins": ["B0...", ...]}
+    """
     candidate = (
         data.get("bestSellersList")
         or data.get("asinList")
@@ -55,7 +62,7 @@ def normalize_bestseller_response(data):
         or []
     )
 
-    # case 1: すでに list
+    # case 1: そのまま配列
     if isinstance(candidate, list):
         raw_asins = candidate
 
@@ -79,6 +86,7 @@ def normalize_bestseller_response(data):
 
         a = asin.strip().upper()
 
+        # ASIN形式のみ通す
         if not ASIN_PATTERN.fullmatch(a):
             continue
 
@@ -91,7 +99,7 @@ def normalize_bestseller_response(data):
     return cleaned[:TOP_N]
 
 
-def fetch_bestseller_asins():
+def fetch_bestseller_asins() -> list[str]:
     domain = DOMAIN_MAP[LOCALE]
 
     params = {
@@ -100,7 +108,10 @@ def fetch_bestseller_asins():
         "category": CATEGORY_ID,
     }
 
-    print(f"[INFO] request bestseller locale={LOCALE} category={CATEGORY} category_id={CATEGORY_ID}")
+    print(
+        f"[INFO] request bestseller "
+        f"locale={LOCALE} category={CATEGORY} category_id={CATEGORY_ID}"
+    )
 
     r = requests.get(KEEPA_BESTSELLER_API, params=params, timeout=60)
 
@@ -112,14 +123,19 @@ def fetch_bestseller_asins():
         print(f"[ERROR] HTTP {r.status_code} body={r.text[:500]}")
         return []
 
-    data = r.json()
+    try:
+        data = r.json()
+    except Exception as e:
+        print(f"[ERROR] invalid json on bestseller API: {e}")
+        return []
+
     print(f"[DEBUG] bestseller response keys={list(data.keys())}")
 
     asins = normalize_bestseller_response(data)
     return asins
 
 
-def build_rows(asins):
+def build_rows(asins: list[str]):
     now = datetime.now(timezone.utc).isoformat()
     rows = []
 
@@ -173,7 +189,10 @@ def main():
     upsert_tracked_asins(rows)
 
     print("[DONE] bestseller ASIN import finished")
-    print(f"[DONE] locale={LOCALE} category={CATEGORY} category_id={CATEGORY_ID} captured_at={now}")
+    print(
+        f"[DONE] locale={LOCALE} category={CATEGORY} "
+        f"category_id={CATEGORY_ID} captured_at={now}"
+    )
 
     time.sleep(SLEEP_SEC)
 
