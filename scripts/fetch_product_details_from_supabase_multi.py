@@ -8,15 +8,17 @@ KEEPA_API_KEY = os.environ["KEEPA_API_KEY"]
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE"]
 
-MAX_PER_RUN = int(os.environ.get("MAX_PER_RUN", "4"))
-MAX_JP = int(os.environ.get("MAX_JP", "2"))
-MAX_US = int(os.environ.get("MAX_US", "2"))
-MAX_UK = int(os.environ.get("MAX_UK", "0"))
+MAX_PER_RUN = int(os.environ.get("MAX_PER_RUN", "3"))
+MAX_JP = int(os.environ.get("MAX_JP", "1"))
+MAX_US = int(os.environ.get("MAX_US", "1"))
+MAX_UK = int(os.environ.get("MAX_UK", "1"))
 
+# Keepa domain mapping
+# US = 1, UK = 2, JP = 5
 DOMAIN_MAP = {
-    "jp": 1,
-    "us": 2,
-    "uk": 3,
+    "us": 1,
+    "uk": 2,
+    "jp": 5,
 }
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -59,9 +61,11 @@ def extract_image_url(product):
     images = product.get("imagesCSV")
     if not images:
         return None
+
     first_image = images.split(",")[0].strip()
     if not first_image:
         return None
+
     return f"https://images-na.ssl-images-amazon.com/images/I/{first_image}"
 
 
@@ -69,6 +73,7 @@ def extract_sales_rank(product):
     ranks = product.get("salesRanks")
     if not ranks:
         return None
+
     try:
         last_rank_series = list(ranks.values())[-1]
         if not last_rank_series:
@@ -116,15 +121,26 @@ def build_score(product, stats):
 
 
 def select_targets():
-    res = supabase.table("v_asin_priority_multi").select(
-        "asin, locale, category, priority, locale_rank"
-    ).execute()
+    res = (
+        supabase.table("v_asin_priority_multi")
+        .select("asin, locale, category, priority, locale_rank")
+        .execute()
+    )
 
     rows = res.data or []
 
-    jp = [r for r in rows if r.get("locale") == "jp" and (r.get("locale_rank") or 999999) <= MAX_JP]
-    us = [r for r in rows if r.get("locale") == "us" and (r.get("locale_rank") or 999999) <= MAX_US]
-    uk = [r for r in rows if r.get("locale") == "uk" and (r.get("locale_rank") or 999999) <= MAX_UK]
+    jp = [
+        r for r in rows
+        if r.get("locale") == "jp" and (r.get("locale_rank") or 999999) <= MAX_JP
+    ]
+    us = [
+        r for r in rows
+        if r.get("locale") == "us" and (r.get("locale_rank") or 999999) <= MAX_US
+    ]
+    uk = [
+        r for r in rows
+        if r.get("locale") == "uk" and (r.get("locale_rank") or 999999) <= MAX_UK
+    ]
 
     targets = (jp + us + uk)[:MAX_PER_RUN]
     return targets
