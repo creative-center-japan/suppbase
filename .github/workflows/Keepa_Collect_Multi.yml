@@ -1,12 +1,12 @@
 name: Keepa Collect Multi
 
 on:
-  # schedule:
-  #   - cron: "0 18 * * *"   # 03:00 JST
-  #   - cron: "0 0 * * *"    # 09:00 JST
-  #   - cron: "0 6 * * *"    # 15:00 JST
-  #   - cron: "0 12 * * *"   # 21:00 JST
-  workflow_dispatch:
+   schedule:
+     - cron: "0 18 * * *"   # 03:00 JST
+     - cron: "0 0 * * *"    # 09:00 JST
+     - cron: "0 6 * * *"    # 15:00 JST
+     - cron: "0 12 * * *"   # 21:00 JST
+
 
 jobs:
   collect:

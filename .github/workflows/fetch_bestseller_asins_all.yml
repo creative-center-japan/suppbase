@@ -1,10 +1,9 @@
 name: Fetch Bestseller ASINs All
 
 on:
-  workflow_dispatch:
-  # schedule:
-  #   - cron: "0 18 * * *"   # 03:00 JST
-  #   - cron: "0 6 * * 1,4"  # 15:00 JST Mon/Thu などでもOK
+   schedule:
+     - cron: "0 18 * * *"   # 03:00 JST
+     - cron: "0 6 * * 1,4"  # 15:00 JST Mon/Thu などでもOK
 
 jobs:
   fetch:
