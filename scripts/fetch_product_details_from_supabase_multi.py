@@ -112,11 +112,30 @@ def img_url(csv: Optional[str]) -> Optional[str]:
     return f"https://images-na.ssl-images-amazon.com/images/I/{first}"
 
 
+def to_int_or_none(value):
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    try:
+        s = str(value).strip()
+        if not s:
+            return None
+        return int(float(s))
+    except Exception:
+        return None
+
+
 def build(tracked: Dict[str, Any], kp: Dict[str, Any]) -> Dict[str, Any]:
     stats = kp.get("stats") or {}
 
-    price = stats.get("buyBoxPrice")
-    price = price / 100 if isinstance(price, (int, float)) and price > 0 else None
+    buy_box_price = to_int_or_none(stats.get("buyBoxPrice"))
+    review_count = to_int_or_none(stats.get("reviewCount"))
+    sales_rank = to_int_or_none(stats.get("salesRankReference"))
 
     return {
         "asin": tracked["asin"],
@@ -124,9 +143,9 @@ def build(tracked: Dict[str, Any], kp: Dict[str, Any]) -> Dict[str, Any]:
         "title": kp.get("title"),
         "brand": kp.get("brand"),
         "imageUrl": img_url(kp.get("imagesCSV")),
-        "buyBoxPrice": price,
-        "reviewCount": stats.get("reviewCount"),
-        "salesRank": stats.get("salesRankReference"),
+        "buyBoxPrice": buy_box_price,
+        "reviewCount": review_count,
+        "salesRank": sales_rank,
         "sub_category": tracked.get("sub_category"),
         "protein_type": detect_type(kp.get("title") or ""),
         "updated_at": now(),
@@ -169,7 +188,10 @@ def main() -> None:
                     continue
 
                 row = build(tracked, kp)
-                print(f"[SAVE] asin={asin} locale={row['locale']}")
+                print(
+                    f"[SAVE] asin={asin} locale={row['locale']} "
+                    f"buyBoxPrice={row['buyBoxPrice']} reviewCount={row['reviewCount']} salesRank={row['salesRank']}"
+                )
                 save_rows.append(row)
                 touched_rows.append(
                     {
