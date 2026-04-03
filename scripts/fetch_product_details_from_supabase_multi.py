@@ -1,450 +1,277 @@
 import os
 import time
-import requests
 from datetime import datetime, timezone
-from supabase import create_client
+from typing import Any, Dict, List, Optional
+
+import requests
+from supabase import Client, create_client
 
 
-KEEPA_API_KEY = os.environ["KEEPA_API_KEY"]
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE"]
+KEEPA_API_KEY = os.environ["KEEPA_API_KEY"]
 
-MAX_PER_RUN = int(os.environ.get("MAX_PER_RUN", "4"))
-MAX_JP_PROTEIN = int(os.environ.get("MAX_JP_PROTEIN", "1"))
-MAX_JP_SUPPLEMENT = int(os.environ.get("MAX_JP_SUPPLEMENT", "1"))
-MAX_US_PROTEIN = int(os.environ.get("MAX_US_PROTEIN", "1"))
-MAX_UK_PROTEIN = int(os.environ.get("MAX_UK_PROTEIN", "1"))
+LOCALES = [x.strip().lower() for x in os.environ.get("LOCALES", "").split(",") if x.strip()]
+BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "20"))
+KEEPA_CHUNK_SIZE = int(os.environ.get("KEEPA_CHUNK_SIZE", "10"))
+MAX_ITEMS = int(os.environ.get("MAX_ITEMS", "0"))
+ONLY_ACTIVE = os.environ.get("ONLY_ACTIVE", "true").strip().lower() == "true"
+ORDER_ASC = os.environ.get("ORDER_ASC", "true").strip().lower() == "true"
+SLEEP_SEC = float(os.environ.get("SLEEP_SEC", "1"))
 
-# Keepa domain mapping
-# US = 1, UK = 2, JP = 5
+KEEPA_PRODUCT_API = "https://api.keepa.com/product"
+
 DOMAIN_MAP = {
     "us": 1,
     "uk": 2,
     "jp": 5,
 }
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-KEEPA_PRODUCT_API = "https://api.keepa.com/product"
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
-def fetch_keepa_product(asin: str, locale: str):
-    domain = DOMAIN_MAP.get(locale)
-    if not domain:
-        print(f"[SKIP] unsupported locale: {locale} / {asin}")
+def now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def normalize_locale(value: Optional[str]) -> Optional[str]:
+    if value is None:
         return None
-
-    params = {
-        "key": KEEPA_API_KEY,
-        "domain": domain,
-        "asin": asin,
-        "stats": 180,
-        "history": 0,
-    }
-
-    try:
-        r = requests.get(KEEPA_PRODUCT_API, params=params, timeout=30)
-    except Exception as e:
-        print(f"[ERROR] request failed for {locale}:{asin}: {e}")
-        return None
-
-    if r.status_code == 429:
-        print(f"[429] rate limited -> skip stats {locale}:{asin}")
-        return None
-
-    if r.status_code != 200:
-        print(f"[ERROR] HTTP {r.status_code} for stats {locale}:{asin} / body={r.text[:500]}")
-        return None
-
-    try:
-        data = r.json()
-    except Exception as e:
-        print(f"[ERROR] invalid json for stats {locale}:{asin}: {e}")
-        return None
-
-    products = data.get("products")
-    if not products:
-        print(f"[SKIP] no products returned for stats {locale}:{asin}")
-        return None
-
-    return products[0]
+    v = str(value).strip().lower()
+    return v if v else None
 
 
-def fetch_keepa_product_with_offers(asin: str, locale: str):
-    domain = DOMAIN_MAP.get(locale)
-    if not domain:
-        print(f"[SKIP] unsupported locale for offers: {locale} / {asin}")
-        return None
-
-    params = {
-        "key": KEEPA_API_KEY,
-        "domain": domain,
-        "asin": asin,
-        "offers": 20,
-        "buybox": 1,
-        "update": 48,
-        "history": 0,
-    }
-
-    try:
-        r = requests.get(KEEPA_PRODUCT_API, params=params, timeout=60)
-    except Exception as e:
-        print(f"[ERROR] request failed for offers {locale}:{asin}: {e}")
-        return None
-
-    if r.status_code == 429:
-        print(f"[429] rate limited -> skip offers {locale}:{asin}")
-        return None
-
-    if r.status_code != 200:
-        print(f"[ERROR] HTTP {r.status_code} for offers {locale}:{asin} / body={r.text[:500]}")
-        return None
-
-    try:
-        data = r.json()
-    except Exception as e:
-        print(f"[ERROR] invalid json for offers {locale}:{asin}: {e}")
-        return None
-
-    products = data.get("products")
-    if not products:
-        print(f"[SKIP] no products returned for offers {locale}:{asin}")
-        return None
-
-    return products[0]
+def chunked(items: List[Any], size: int) -> List[List[Any]]:
+    return [items[i:i + size] for i in range(0, len(items), size)]
 
 
-def extract_price_from_offers(product: dict):
-    offers = product.get("offers") or []
-    latest_ts = -1
-    latest_price = None
-
-    for offer in offers:
-        csv = offer.get("offerCSV") or []
-        for i in range(0, len(csv), 3):
-            try:
-                ts, price, _ = csv[i:i + 3]
-            except ValueError:
-                continue
-
-            if isinstance(price, int) and price > 0 and ts > latest_ts:
-                latest_ts = ts
-                latest_price = price
-
-    return latest_price
-
-
-def extract_image_url(product: dict):
-    images = product.get("imagesCSV")
-    if not images:
-        return None
-
-    first_image = images.split(",")[0].strip()
-    if not first_image:
-        return None
-
-    return f"https://images-na.ssl-images-amazon.com/images/I/{first_image}"
-
-
-def extract_sales_rank(product: dict):
-    ranks = product.get("salesRanks")
-    if not ranks:
-        return None
-
-    try:
-        # KeepaのsalesRanksはカテゴリIDごとの配列
-        # 最後のカテゴリ配列の最後の値を採用
-        last_rank_series = list(ranks.values())[-1]
-        if not last_rank_series:
-            return None
-        return last_rank_series[-1]
-    except Exception:
-        return None
-
-
-def infer_protein_type(title: str | None, category: str | None):
-    if category == "supplement":
-        return None
-
+def detect_protein_type(title: str) -> Optional[str]:
     if not title:
         return None
 
     t = title.lower()
 
-    if "soy" in t:
+    if any(
+        k in t
+        for k in [
+            "bcaa",
+            "eaa",
+            "creatine",
+            "pre workout",
+            "pre-workout",
+            "vitamin",
+            "omega",
+            "fish oil",
+            "collagen",
+        ]
+    ):
+        return "supplement"
+
+    if any(k in t for k in ["soy protein", "soy isolate", "soy"]):
         return "soy"
-    if "isolate" in t or "wpi" in t:
+
+    if any(
+        k in t
+        for k in [
+            "wpi",
+            "isolate",
+            "iso100",
+            "iso-100",
+            "hydrowhey",
+            "hydro whey",
+            "whey isolate",
+        ]
+    ):
         return "wpi"
+
     if "whey" in t:
-        return "whey"
-    if "protein" in t:
-        return "protein"
+        return "other"
 
     return None
 
 
-def normalize_buybox_price(value):
-    if value in (None, -1):
-        return None
-    try:
-        v = int(value)
-        return v if v > 0 else None
-    except Exception:
-        return None
+def fetch_tracked_asins_for_locale(locale: str) -> List[Dict[str, Any]]:
+    q = supabase.table("tracked_asins").select(
+        "asin, locale, category, source, sub_category, display_category, rank, priority, refresh_group, is_active, last_fetched_at"
+    )
 
+    if ONLY_ACTIVE:
+        q = q.eq("is_active", True)
 
-def normalize_monthly_sold(value):
-    if value in (None, -1):
-        return None
-    try:
-        return int(value)
-    except Exception:
-        return None
+    q = q.eq("locale", locale)
+    q = q.order("last_fetched_at", desc=(not ORDER_ASC)).limit(BATCH_SIZE)
 
-
-def normalize_int(value, default=0):
-    if value is None:
-        return default
-    try:
-        return int(value)
-    except Exception:
-        return default
-
-
-def build_score(product, stats):
-    drops30 = normalize_int(stats.get("salesRankDrops30"), 0)
-    drops90 = normalize_int(stats.get("salesRankDrops90"), 0)
-    reviews = normalize_int(product.get("reviewsCount"), 0)
-    monthly_sold = normalize_int(product.get("monthlySold"), 0)
-
-    return int(drops30 * 100 + drops90 * 50 + reviews * 2 + monthly_sold * 3)
-
-
-def dedupe_rows(rows):
-    seen = set()
-    out = []
-
-    for r in rows:
-        asin = (r.get("asin") or "").strip().upper()
-        locale = (r.get("locale") or "").strip().lower()
-
-        if not asin or not locale:
-            continue
-
-        key = (asin, locale)
-        if key in seen:
-            continue
-
-        seen.add(key)
-        r["asin"] = asin
-        r["locale"] = locale
-        out.append(r)
-
-    return out
-
-
-def select_targets():
-    try:
-        res = (
-            supabase.table("v_asin_priority_multi")
-            .select("asin, locale, category, priority, locale_rank")
-            .execute()
-        )
-    except Exception as e:
-        print(f"[ERROR] failed to read v_asin_priority_multi: {e}")
-        raise
-
+    res = q.execute()
     rows = res.data or []
-    print(f"[INFO] rows from v_asin_priority_multi: {len(rows)}")
 
-    rows = dedupe_rows(rows)
+    if MAX_ITEMS > 0:
+        rows = rows[:MAX_ITEMS]
 
-    jp_protein = [
-        r for r in rows
-        if r.get("locale") == "jp" and r.get("category") == "protein"
-    ][:MAX_JP_PROTEIN]
-
-    jp_supplement = [
-        r for r in rows
-        if r.get("locale") == "jp" and r.get("category") == "supplement"
-    ][:MAX_JP_SUPPLEMENT]
-
-    us_protein = [
-        r for r in rows
-        if r.get("locale") == "us" and r.get("category") == "protein"
-    ][:MAX_US_PROTEIN]
-
-    uk_protein = [
-        r for r in rows
-        if r.get("locale") == "uk" and r.get("category") == "protein"
-    ][:MAX_UK_PROTEIN]
-
-    targets = (jp_protein + jp_supplement + us_protein + uk_protein)[:MAX_PER_RUN]
-
-    print("[INFO] selected targets summary:")
-    for r in targets:
-        print(
-            f"  - locale={r.get('locale')} "
-            f"category={r.get('category')} "
-            f"asin={r.get('asin')} "
-            f"priority={r.get('priority')} "
-            f"locale_rank={r.get('locale_rank')}"
-        )
-
-    if not targets:
-        print("[WARN] no targets selected. check v_asin_priority_multi contents.")
-
-    return targets
+    return rows
 
 
-def upsert_products(rows):
+def fetch_tracked_asins_grouped() -> Dict[str, List[Dict[str, Any]]]:
+    target_locales = LOCALES or ["jp", "us", "uk"]
+    grouped: Dict[str, List[Dict[str, Any]]] = {}
+
+    for locale in target_locales:
+        locale = normalize_locale(locale)
+        if not locale:
+            continue
+        rows = fetch_tracked_asins_for_locale(locale)
+        grouped[locale] = rows
+        print(f"[INFO] locale={locale} tracked_rows={len(rows)}")
+
+    return grouped
+
+
+def call_keepa_products(asins: List[str], locale: str) -> List[Dict[str, Any]]:
+    domain = DOMAIN_MAP.get(locale)
+    if not domain:
+        print(f"[SKIP] unsupported locale={locale}")
+        return []
+
+    params = {
+        "key": KEEPA_API_KEY,
+        "domain": domain,
+        "asin": ",".join(asins),
+        "stats": 30,
+        "buybox": 1,
+        "offers": 20,
+        "history": 0,
+        "rating": 1,
+    }
+
+    r = requests.get(KEEPA_PRODUCT_API, params=params, timeout=60)
+
+    if r.status_code == 429:
+        print(f"[429] rate limited locale={locale}")
+        return []
+
+    if r.status_code != 200:
+        print(f"[ERROR] Keepa HTTP {r.status_code} locale={locale} body={r.text[:300]}")
+        return []
+
+    data = r.json()
+    return data.get("products") or []
+
+
+def build_image_url(images_csv: Optional[str]) -> Optional[str]:
+    if not images_csv:
+        return None
+    first_image = images_csv.split(",")[0].strip()
+    if not first_image:
+        return None
+    return f"https://images-na.ssl-images-amazon.com/images/I/{first_image}"
+
+
+def build_product_row(tracked: Dict[str, Any], keepa_product: Dict[str, Any]) -> Dict[str, Any]:
+    tracked_locale = normalize_locale(tracked.get("locale"))
+    title = keepa_product.get("title") or ""
+    stats = keepa_product.get("stats") or {}
+
+    buy_box_price = None
+    if isinstance(stats.get("buyBoxPrice"), (int, float)) and stats["buyBoxPrice"] > 0:
+        buy_box_price = stats["buyBoxPrice"] / 100.0
+
+    return {
+        "asin": tracked["asin"],
+        "locale": tracked_locale,
+        "title": title,
+        "brand": keepa_product.get("brand"),
+        "manufacturer": keepa_product.get("manufacturer"),
+        "image_url": build_image_url(keepa_product.get("imagesCSV")),
+        "buyboxprice": buy_box_price,
+        "review_count": stats.get("reviewCount"),
+        "monthly_sold": stats.get("monthlySold"),
+        "sales_rank_drops_30": stats.get("salesRankDrops30"),
+        "salesrank": stats.get("salesRankReference"),
+        "protein_type": detect_protein_type(title),
+        "category": tracked.get("category"),
+        "source": tracked.get("source"),
+        "sub_category": tracked.get("sub_category"),
+        "display_category": tracked.get("display_category"),
+        "rank": tracked.get("rank"),
+        "priority": tracked.get("priority"),
+        "refresh_group": tracked.get("refresh_group"),
+        "updated_at": now_iso(),
+    }
+
+
+def upsert_products(rows: List[Dict[str, Any]]) -> None:
     if not rows:
-        print("[SKIP] no product rows")
         return
-
-    try:
-        resp = supabase.table("products").upsert(
-            rows,
-            on_conflict="asin,locale",
-        ).execute()
-        print(f"[OK] upsert products: {len(rows)} / response_count={len(resp.data or []) if hasattr(resp, 'data') else 'n/a'}")
-    except Exception as e:
-        print(f"[ERROR] upsert products failed: {e}")
-        raise
+    supabase.table("products").upsert(rows).execute()
 
 
-def insert_snapshots(rows):
-    if not rows:
-        print("[SKIP] no snapshot rows")
-        return
-
-    try:
-        resp = supabase.table("product_snapshots").insert(rows).execute()
-        print(f"[OK] insert snapshots: {len(rows)} / response_count={len(resp.data or []) if hasattr(resp, 'data') else 'n/a'}")
-    except Exception as e:
-        print(f"[ERROR] insert snapshots failed: {e}")
-        raise
+def touch_tracked_asins(rows: List[Dict[str, Any]]) -> None:
+    ts = now_iso()
+    for row in rows:
+        supabase.table("tracked_asins").update(
+            {
+                "last_fetched_at": ts,
+                "last_checked_at": ts,
+            }
+        ).eq("asin", row["asin"]).eq("locale", row["locale"]).execute()
 
 
-def update_last_checked(asins_by_locale, checked_at):
-    for locale, asin_list in asins_by_locale.items():
-        if not asin_list:
-            print(f"[SKIP] no checked asins for {locale}")
+def main() -> None:
+    grouped = fetch_tracked_asins_grouped()
+
+    total_saved = 0
+
+    for locale, rows in grouped.items():
+        if not rows:
+            print(f"[SKIP] locale={locale} no tracked_asins rows")
             continue
 
-        try:
-            resp = (
-                supabase.table("tracked_asins")
-                .update({"last_checked_at": checked_at})
-                .eq("locale", locale)
-                .in_("asin", asin_list)
-                .execute()
-            )
-            print(
-                f"[OK] updated last_checked_at: locale={locale} "
-                f"count={len(asin_list)} "
-                f"response_count={len(resp.data or []) if hasattr(resp, 'data') else 'n/a'}"
-            )
-        except Exception as e:
-            print(f"[ERROR] update_last_checked failed: locale={locale} / {e}")
-            raise
+        asin_map = {row["asin"]: row for row in rows}
+        asin_list = list(asin_map.keys())
 
+        print(f"[INFO] locale={locale} processing_asins={len(asin_list)}")
 
-def main():
-    targets = select_targets()
+        for asin_chunk in chunked(asin_list, KEEPA_CHUNK_SIZE):
+            keepa_products = call_keepa_products(asin_chunk, locale)
+            if not keepa_products:
+                time.sleep(SLEEP_SEC)
+                continue
 
-    if not targets:
-        print("[INFO] no ASINs selected")
-        return
+            save_rows: List[Dict[str, Any]] = []
+            touched_rows: List[Dict[str, Any]] = []
 
-    now = datetime.now(timezone.utc).isoformat()
+            for kp in keepa_products:
+                asin = kp.get("asin")
+                if not asin:
+                    continue
 
-    products = []
-    snapshots = []
-    checked = {"jp": [], "us": [], "uk": []}
+                tracked = asin_map.get(asin)
+                if not tracked:
+                    continue
 
-    print(f"[INFO] selected {len(targets)} targets")
+                product_row = build_product_row(tracked, kp)
 
-    for row in targets:
-        asin = (row.get("asin") or "").strip().upper()
-        locale = (row.get("locale") or "").strip().lower()
-        category = (row.get("category") or "").strip().lower()
+                print(
+                    f"[SAVE] asin={asin} tracked_locale={tracked.get('locale')} "
+                    f"product_locale={product_row['locale']} title={product_row.get('title')}"
+                )
 
-        if not asin or not locale:
-            print(f"[SKIP] invalid row: {row}")
-            continue
+                save_rows.append(product_row)
+                touched_rows.append(
+                    {
+                        "asin": asin,
+                        "locale": normalize_locale(tracked.get("locale")),
+                    }
+                )
 
-        print(f"[PROCESS] locale={locale} category={category} asin={asin}")
+            if save_rows:
+                upsert_products(save_rows)
+                touch_tracked_asins(touched_rows)
+                total_saved += len(save_rows)
+                print(f"[OK] locale={locale} saved={len(save_rows)}")
 
-        p = fetch_keepa_product(asin, locale)
-        if not p:
-            print(f"[SKIP] no product detail for {locale}:{asin}")
-            continue
+            time.sleep(SLEEP_SEC)
 
-        title = p.get("title")
-        if not title:
-            print(f"[SKIP] no title for {locale}:{asin}")
-            continue
-
-        stats = p.get("stats", {}) or {}
-        sales_rank = extract_sales_rank(p)
-        buybox_price = normalize_buybox_price(stats.get("buyBoxPrice"))
-
-        if buybox_price is None:
-            heavy = fetch_keepa_product_with_offers(asin, locale)
-            if heavy:
-                buybox_price = extract_price_from_offers(heavy)
-                buybox_price = normalize_buybox_price(buybox_price)
-
-        monthly_sold = normalize_monthly_sold(p.get("monthlySold"))
-        suppbase_score = build_score(p, stats)
-
-        product_row = {
-            "asin": asin,
-            "locale": locale,
-            "title": title,
-            "brand": p.get("brand"),
-            "imageUrl": extract_image_url(p),
-            "reviewCount": normalize_int(p.get("reviewsCount"), None),
-            "salesRank": sales_rank,
-            "buyBoxPrice": buybox_price,
-            "protein_type": infer_protein_type(title, category),
-            "suppbase_score": suppbase_score,
-            "updated_at": now,
-        }
-
-        snapshot_row = {
-            "asin": asin,
-            "locale": locale,
-            "buybox_price": buybox_price,
-            "rating": None,
-            "review_count": normalize_int(p.get("reviewsCount"), None),
-            "monthly_sold": monthly_sold,
-            "sales_rank_latest": sales_rank,
-            "sales_rank_drops30": normalize_int(stats.get("salesRankDrops30"), 0),
-            "sales_rank_drops90": normalize_int(stats.get("salesRankDrops90"), 0),
-            "sales_rank_drops180": normalize_int(stats.get("salesRankDrops180"), 0),
-            "captured_at": now,
-        }
-
-        products.append(product_row)
-        snapshots.append(snapshot_row)
-        checked.setdefault(locale, []).append(asin)
-
-        print(
-            f"[OK] locale={locale} category={category} asin={asin} "
-            f"title={title[:80]} "
-            f"price={buybox_price} monthly_sold={monthly_sold} sales_rank={sales_rank}"
-        )
-
-        time.sleep(1)
-
-    upsert_products(products)
-    insert_snapshots(snapshots)
-    update_last_checked(checked, now)
-
-    print("[DONE] multi collection finished")
-    print(f"[DONE] products={len(products)} snapshots={len(snapshots)}")
-    print(f"[DONE] checked={checked}")
+    print(f"[DONE] fetch_product_details_from_supabase_multi finished total_saved={total_saved}")
 
 
 if __name__ == "__main__":
