@@ -2,6 +2,9 @@ name: Keepa Collect Multi
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "30 0 * * *"   # 09:30 JST
+    - cron: "30 12 * * *"  # 21:30 JST
 
 jobs:
   collect:
@@ -29,7 +32,7 @@ jobs:
           echo "BATCH_SIZE=20" >> $GITHUB_ENV
           echo "KEEPA_CHUNK_SIZE=10" >> $GITHUB_ENV
           echo "ONLY_ACTIVE=true" >> $GITHUB_ENV
-          echo "SLEEP_SEC=1" >> $GITHUB_ENV
+          echo "SLEEP_SEC=3" >> $GITHUB_ENV
 
       - name: Run multi collection
         env:

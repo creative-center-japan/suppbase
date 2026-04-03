@@ -1,0 +1,53 @@
+name: Fetch Bestseller ASINs JP Main
+
+on:
+  schedule:
+    - cron: "0 18 * * *"   # 03:00 JST
+  workflow_dispatch:
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Fetch JP Whey bestseller ASINs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+          ASIN_LOCALE: jp
+          ASIN_CATEGORY: protein
+          CATEGORY_ID: 3457072051
+          ASIN_SOURCE: bestseller
+          TOP_N: 100
+          MAX_INSERT: 100
+          SLEEP_SEC: 1
+        run: python scripts/fetch_bestseller_asins_to_supabase.py
+
+      - name: Fetch JP Soy bestseller ASINs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+          ASIN_LOCALE: jp
+          ASIN_CATEGORY: protein
+          CATEGORY_ID: 3457071051
+          ASIN_SOURCE: bestseller
+          TOP_N: 100
+          MAX_INSERT: 100
+          SLEEP_SEC: 1
+        run: python scripts/fetch_bestseller_asins_to_supabase.py
