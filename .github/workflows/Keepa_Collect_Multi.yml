@@ -1,12 +1,12 @@
 name: Keepa Collect Multi
 
 on:
-   schedule:
-     - cron: "0 18 * * *"   # 03:00 JST
-     - cron: "0 0 * * *"    # 09:00 JST
-     - cron: "0 6 * * *"    # 15:00 JST
-     - cron: "0 12 * * *"   # 21:00 JST
-
+  schedule:
+    - cron: "0 18 * * *"   # 03:00 JST
+    - cron: "0 0 * * *"    # 09:00 JST
+    - cron: "0 6 * * *"    # 15:00 JST
+    - cron: "0 12 * * *"   # 21:00 JST
+  workflow_dispatch:
 
 jobs:
   collect:
@@ -34,11 +34,20 @@ jobs:
           echo "MAX_JP_SUPPLEMENT=1" >> $GITHUB_ENV
           echo "MAX_US_PROTEIN=1" >> $GITHUB_ENV
           echo "MAX_UK_PROTEIN=1" >> $GITHUB_ENV
+          echo "LOCALES=jp,us,uk" >> $GITHUB_ENV
+          echo "ORDER_ASC=false" >> $GITHUB_ENV
 
       - name: Run multi collection
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+          LOCALES: ${{ env.LOCALES }}
+          ORDER_ASC: ${{ env.ORDER_ASC }}
+          MAX_PER_RUN: ${{ env.MAX_PER_RUN }}
+          MAX_JP_PROTEIN: ${{ env.MAX_JP_PROTEIN }}
+          MAX_JP_SUPPLEMENT: ${{ env.MAX_JP_SUPPLEMENT }}
+          MAX_US_PROTEIN: ${{ env.MAX_US_PROTEIN }}
+          MAX_UK_PROTEIN: ${{ env.MAX_UK_PROTEIN }}
         run: |
           python scripts/fetch_product_details_from_supabase_multi.py
