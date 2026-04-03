@@ -29,19 +29,19 @@ DOMAIN_MAP = {
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
-def now():
+def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def normalize_locale(v):
+def normalize_locale(v: Optional[str]) -> Optional[str]:
     return str(v).strip().lower() if v else None
 
 
-def chunk(lst, size):
+def chunk(lst: List[Any], size: int) -> List[List[Any]]:
     return [lst[i:i + size] for i in range(0, len(lst), size)]
 
 
-def detect_type(title: str):
+def detect_type(title: str) -> Optional[str]:
     if not title:
         return None
 
@@ -53,7 +53,7 @@ def detect_type(title: str):
     if "soy" in t:
         return "soy"
 
-    if any(k in t for k in ["isolate", "wpi", "iso100"]):
+    if any(k in t for k in ["isolate", "wpi", "iso100", "iso-100", "whey isolate", "hydro whey", "hydrowhey"]):
         return "wpi"
 
     if "whey" in t:
@@ -62,9 +62,9 @@ def detect_type(title: str):
     return None
 
 
-def fetch_tracked(locale):
+def fetch_tracked(locale: str) -> List[Dict[str, Any]]:
     q = supabase.table("tracked_asins").select(
-        "asin, locale, category, source, sub_category, display_category, rank, priority, refresh_group, is_active, last_fetched_at"
+        "asin, locale, sub_category, is_active, last_fetched_at"
     )
 
     if ONLY_ACTIVE:
@@ -76,8 +76,11 @@ def fetch_tracked(locale):
     return q.execute().data or []
 
 
-def call_keepa(asins, locale):
+def call_keepa(asins: List[str], locale: str) -> List[Dict[str, Any]]:
     domain = DOMAIN_MAP.get(locale)
+    if not domain:
+        print(f"[SKIP] unsupported locale={locale}")
+        return []
 
     params = {
         "key": KEEPA_API_KEY,
@@ -87,59 +90,66 @@ def call_keepa(asins, locale):
         "buybox": 1,
     }
 
-    r = requests.get(KEEPA_API, params=params)
+    r = requests.get(KEEPA_API, params=params, timeout=60)
+
+    if r.status_code == 429:
+        print(f"[429] locale={locale}")
+        return []
 
     if r.status_code != 200:
-        print("[ERROR]", r.text)
+        print(f"[ERROR] locale={locale} status={r.status_code} body={r.text[:300]}")
         return []
 
     return r.json().get("products", [])
 
 
-def img_url(csv):
+def img_url(csv: Optional[str]) -> Optional[str]:
     if not csv:
         return None
-    return f"https://images-na.ssl-images-amazon.com/images/I/{csv.split(',')[0]}"
+    first = csv.split(",")[0].strip()
+    if not first:
+        return None
+    return f"https://images-na.ssl-images-amazon.com/images/I/{first}"
 
 
-def build(tracked, kp):
+def build(tracked: Dict[str, Any], kp: Dict[str, Any]) -> Dict[str, Any]:
     stats = kp.get("stats") or {}
 
     price = stats.get("buyBoxPrice")
-    price = price / 100 if price else None
+    price = price / 100 if isinstance(price, (int, float)) and price > 0 else None
 
     return {
         "asin": tracked["asin"],
         "locale": normalize_locale(tracked["locale"]),
         "title": kp.get("title"),
         "brand": kp.get("brand"),
-        "manufacturer": kp.get("manufacturer"),
         "imageUrl": img_url(kp.get("imagesCSV")),
         "buyBoxPrice": price,
         "reviewCount": stats.get("reviewCount"),
-        "monthly_sold": stats.get("monthlySold"),
         "salesRank": stats.get("salesRankReference"),
-        "sales_rank_drops_30": stats.get("salesRankDrops30"),
-        "protein_type": detect_type(kp.get("title")),
-        "category": tracked.get("category"),
-        "source": tracked.get("source"),
         "sub_category": tracked.get("sub_category"),
-        "display_category": tracked.get("display_category"),
-        "rank": tracked.get("rank"),
-        "priority": tracked.get("priority"),
-        "refresh_group": tracked.get("refresh_group"),
+        "protein_type": detect_type(kp.get("title") or ""),
         "updated_at": now(),
     }
 
 
-def main():
-    targets = LOCALES or ["jp", "us", "uk"]
+def touch_tracked(rows: List[Dict[str, Any]]) -> None:
+    ts = now()
+    for row in rows:
+        supabase.table("tracked_asins").update(
+            {
+                "last_fetched_at": ts,
+                "last_checked_at": ts,
+            }
+        ).eq("asin", row["asin"]).eq("locale", row["locale"]).execute()
 
+
+def main() -> None:
+    targets = LOCALES or ["jp", "us", "uk"]
     total = 0
 
     for locale in targets:
         rows = fetch_tracked(locale)
-
         print(f"[INFO] locale={locale} rows={len(rows)}")
 
         if not rows:
@@ -149,29 +159,34 @@ def main():
 
         for group in chunk(list(asin_map.keys()), KEEPA_CHUNK_SIZE):
             products = call_keepa(group, locale)
-
-            save = []
+            save_rows: List[Dict[str, Any]] = []
+            touched_rows: List[Dict[str, Any]] = []
 
             for kp in products:
                 asin = kp.get("asin")
                 tracked = asin_map.get(asin)
-
-                if not tracked:
+                if not asin or not tracked:
                     continue
 
                 row = build(tracked, kp)
+                print(f"[SAVE] asin={asin} locale={row['locale']}")
+                save_rows.append(row)
+                touched_rows.append(
+                    {
+                        "asin": asin,
+                        "locale": normalize_locale(tracked["locale"]),
+                    }
+                )
 
-                print(f"[SAVE] {asin} locale={row['locale']}")
-
-                save.append(row)
-
-            if save:
-                supabase.table("products").upsert(save).execute()
-                total += len(save)
+            if save_rows:
+                supabase.table("products").upsert(save_rows).execute()
+                touch_tracked(touched_rows)
+                total += len(save_rows)
+                print(f"[OK] locale={locale} saved={len(save_rows)}")
 
             time.sleep(SLEEP_SEC)
 
-    print("[DONE]", total)
+    print(f"[DONE] total_saved={total}")
 
 
 if __name__ == "__main__":
