@@ -29,13 +29,12 @@ jobs:
 
       - name: Set ENV
         run: |
-          echo "MAX_PER_RUN=4" >> $GITHUB_ENV
-          echo "MAX_JP_PROTEIN=1" >> $GITHUB_ENV
-          echo "MAX_JP_SUPPLEMENT=1" >> $GITHUB_ENV
-          echo "MAX_US_PROTEIN=1" >> $GITHUB_ENV
-          echo "MAX_UK_PROTEIN=1" >> $GITHUB_ENV
           echo "LOCALES=jp,us,uk" >> $GITHUB_ENV
           echo "ORDER_ASC=false" >> $GITHUB_ENV
+          echo "BATCH_SIZE=50" >> $GITHUB_ENV
+          echo "KEEPA_CHUNK_SIZE=10" >> $GITHUB_ENV
+          echo "ONLY_ACTIVE=true" >> $GITHUB_ENV
+          echo "SLEEP_SEC=1" >> $GITHUB_ENV
 
       - name: Run multi collection
         env:
@@ -44,10 +43,9 @@ jobs:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
           LOCALES: ${{ env.LOCALES }}
           ORDER_ASC: ${{ env.ORDER_ASC }}
-          MAX_PER_RUN: ${{ env.MAX_PER_RUN }}
-          MAX_JP_PROTEIN: ${{ env.MAX_JP_PROTEIN }}
-          MAX_JP_SUPPLEMENT: ${{ env.MAX_JP_SUPPLEMENT }}
-          MAX_US_PROTEIN: ${{ env.MAX_US_PROTEIN }}
-          MAX_UK_PROTEIN: ${{ env.MAX_UK_PROTEIN }}
+          BATCH_SIZE: ${{ env.BATCH_SIZE }}
+          KEEPA_CHUNK_SIZE: ${{ env.KEEPA_CHUNK_SIZE }}
+          ONLY_ACTIVE: ${{ env.ONLY_ACTIVE }}
+          SLEEP_SEC: ${{ env.SLEEP_SEC }}
         run: |
           python scripts/fetch_product_details_from_supabase_multi.py
