@@ -1,9 +1,9 @@
 name: Fetch Bestseller ASINs JP BCAA
 
 on:
+  workflow_dispatch:
   schedule:
     - cron: "0 20 * * *"   # 05:00 JST
-  workflow_dispatch:
 
 jobs:
   fetch:
@@ -31,9 +31,14 @@ jobs:
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
           ASIN_LOCALE: jp
           ASIN_CATEGORY: supplement
+          SUB_CATEGORY: bcaa
+          DISPLAY_CATEGORY: supplement
           CATEGORY_ID: 3457012051
           ASIN_SOURCE: bestseller
           TOP_N: 100
           MAX_INSERT: 100
           SLEEP_SEC: 1
-        run: python scripts/fetch_bestseller_asins_to_supabase.py
+          RETRY_COUNT: 2
+          RETRY_WAIT_SEC: 70
+        run: |
+          python scripts/fetch_bestseller_asins_to_supabase.py

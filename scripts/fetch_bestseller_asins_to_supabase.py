@@ -1,182 +1,269 @@
 import os
+import sys
 import time
-import re
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 import requests
-from supabase import create_client
+from supabase import create_client, Client
 
 
-KEEPA_API_KEY = os.environ["KEEPA_API_KEY"]
-SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE"]
-
-# 必須ENV
-LOCALE = os.environ.get("ASIN_LOCALE", "jp").strip().lower()
-CATEGORY = os.environ.get("ASIN_CATEGORY", "protein").strip().lower()
-CATEGORY_ID = os.environ.get("CATEGORY_ID", "").strip()
-
-# 任意ENV
-SOURCE = os.environ.get("ASIN_SOURCE", "bestseller").strip().lower()
-TOP_N = int(os.environ.get("TOP_N", "100"))
-MAX_INSERT = int(os.environ.get("MAX_INSERT", "100"))
-SLEEP_SEC = float(os.environ.get("SLEEP_SEC", "1"))
-
-DOMAIN_MAP = {
+KEEPA_DOMAIN_MAP = {
+    "jp": 5,
     "us": 1,
     "uk": 2,
-    "jp": 5,
 }
 
-ASIN_PATTERN = re.compile(r"^[A-Z0-9]{10}$")
-KEEPA_BESTSELLER_API = "https://api.keepa.com/bestsellers"
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+DEFAULT_TIMEOUT = 60
+DEFAULT_TOP_N = 100
+DEFAULT_MAX_INSERT = 100
+DEFAULT_SLEEP_SEC = 1
+DEFAULT_RETRY_COUNT = 2
+DEFAULT_RETRY_WAIT_SEC = 70
 
 
-def validate():
-    if LOCALE not in DOMAIN_MAP:
-        raise ValueError(f"unsupported locale: {LOCALE}")
+def getenv_required(name: str) -> str:
+    value = os.getenv(name)
+    if value is None or value.strip() == "":
+        print(f"[ERROR] missing required env: {name}")
+        sys.exit(1)
+    return value.strip()
 
-    if not CATEGORY_ID:
-        raise ValueError("CATEGORY_ID is required")
 
+def getenv_int(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None or value.strip() == "":
+        return default
     try:
-        int(CATEGORY_ID)
-    except Exception:
-        raise ValueError(f"invalid CATEGORY_ID: {CATEGORY_ID}")
+        return int(value.strip())
+    except ValueError:
+        print(f"[WARN] invalid int env {name}={value!r}; fallback={default}")
+        return default
 
 
-def normalize_bestseller_response(data: dict) -> list[str]:
-    """
-    Keepaのbestseller APIは返却形式が揺れることがあるため、
-    以下のようなケースを吸収する:
-      - {"bestSellersList": ["B0...", ...]}
-      - {"bestSellersList": {"asinList": ["B0...", ...], ...}}
-      - {"asinList": ["B0...", ...]}
-      - {"asins": ["B0...", ...]}
-    """
-    candidate = (
-        data.get("bestSellersList")
-        or data.get("asinList")
-        or data.get("asins")
-        or []
+def getenv_str(name: str, default: Optional[str] = None) -> Optional[str]:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    value = value.strip()
+    return value if value != "" else default
+
+
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def create_supabase_client() -> Client:
+    supabase_url = getenv_required("SUPABASE_URL")
+    supabase_key = getenv_required("SUPABASE_SERVICE_ROLE")
+    return create_client(supabase_url, supabase_key)
+
+
+def build_keepa_url(locale: str, category_id: str, key: str) -> str:
+    domain = KEEPA_DOMAIN_MAP.get(locale.lower())
+    if domain is None:
+        print(f"[ERROR] unsupported locale: {locale}")
+        sys.exit(1)
+
+    return (
+        "https://api.keepa.com/bestSeller"
+        f"?key={key}"
+        f"&domain={domain}"
+        f"&category={category_id}"
     )
 
-    # case 1: そのまま配列
-    if isinstance(candidate, list):
-        raw_asins = candidate
 
-    # case 2: dict の中に asinList / asins がある
-    elif isinstance(candidate, dict):
-        raw_asins = (
-            candidate.get("asinList")
-            or candidate.get("asins")
-            or []
+def request_bestseller_with_retry(
+    locale: str,
+    category: str,
+    category_id: str,
+    keepa_api_key: str,
+    retry_count: int,
+    retry_wait_sec: int,
+) -> Dict[str, Any]:
+    url = build_keepa_url(locale, category_id, keepa_api_key)
+
+    for attempt in range(1, retry_count + 2):
+        print(
+            f"[INFO] request bestseller locale={locale} "
+            f"category={category} category_id={category_id} attempt={attempt}"
         )
 
-    else:
-        raw_asins = []
+        try:
+            response = requests.get(url, timeout=DEFAULT_TIMEOUT)
+        except requests.RequestException as exc:
+            print(f"[ERROR] request failed: {exc}")
+            if attempt <= retry_count:
+                print(f"[INFO] retry after {retry_wait_sec}s")
+                time.sleep(retry_wait_sec)
+                continue
+            return {}
 
-    cleaned = []
+        if response.status_code == 200:
+            try:
+                data = response.json()
+            except ValueError:
+                print("[ERROR] failed to parse JSON response")
+                return {}
+
+            keys = list(data.keys()) if isinstance(data, dict) else []
+            print(f"[DEBUG] bestseller response keys={keys}")
+
+            if isinstance(data, dict):
+                if "tokensLeft" in data:
+                    print(f"[INFO] tokensLeft={data.get('tokensLeft')}")
+                if "refillIn" in data:
+                    print(f"[INFO] refillIn={data.get('refillIn')}")
+                if "refillRate" in data:
+                    print(f"[INFO] refillRate={data.get('refillRate')}")
+                if "tokenFlowReduction" in data:
+                    print(f"[INFO] tokenFlowReduction={data.get('tokenFlowReduction')}")
+
+            return data
+
+        if response.status_code == 429:
+            print("[429] rate limited on bestseller API")
+            if attempt <= retry_count:
+                print(f"[INFO] retry after {retry_wait_sec}s")
+                time.sleep(retry_wait_sec)
+                continue
+            return {}
+
+        print(f"[ERROR] keepa api status={response.status_code} body={response.text[:500]}")
+        return {}
+
+    return {}
+
+
+def extract_asins(data: Dict[str, Any], top_n: int) -> List[str]:
+    raw_list = data.get("bestSellersList", []) if isinstance(data, dict) else []
+    if not isinstance(raw_list, list):
+        return []
+
+    cleaned: List[str] = []
     seen = set()
 
-    for asin in raw_asins:
+    for asin in raw_list:
         if not isinstance(asin, str):
             continue
-
-        a = asin.strip().upper()
-
-        # ASIN形式のみ通す
-        if not ASIN_PATTERN.fullmatch(a):
+        asin = asin.strip()
+        if not asin:
             continue
-
-        if a in seen:
+        if asin in seen:
             continue
+        seen.add(asin)
+        cleaned.append(asin)
+        if len(cleaned) >= top_n:
+            break
 
-        seen.add(a)
-        cleaned.append(a)
-
-    return cleaned[:TOP_N]
+    return cleaned
 
 
-def fetch_bestseller_asins() -> list[str]:
-    domain = DOMAIN_MAP[LOCALE]
+def build_upsert_rows(
+    asins: List[str],
+    locale: str,
+    category: str,
+    source: str,
+    captured_at: str,
+    max_insert: int,
+    sub_category: Optional[str] = None,
+    display_category: Optional[str] = None,
+    priority: Optional[int] = None,
+    refresh_group: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
 
-    params = {
-        "key": KEEPA_API_KEY,
-        "domain": domain,
-        "category": CATEGORY_ID,
-    }
+    for rank, asin in enumerate(asins[:max_insert], start=1):
+        row: Dict[str, Any] = {
+            "asin": asin,
+            "locale": locale,
+            "category": category,
+            "source": source,
+            "rank": rank,
+            "last_rank": rank,
+            "display_category": display_category or category,
+            "last_seen_at": captured_at,
+            "last_rank_at": captured_at,
+            "last_active_at": captured_at,
+            "last_checked_at": captured_at,
+            "last_fetched_at": captured_at,
+            "is_active": True,
+        }
 
-    print(
-        f"[INFO] request bestseller "
-        f"locale={LOCALE} category={CATEGORY} category_id={CATEGORY_ID}"
+        if sub_category:
+            row["sub_category"] = sub_category
+
+        if priority is not None:
+            row["priority"] = priority
+
+        if refresh_group:
+            row["refresh_group"] = refresh_group
+
+        rows.append(row)
+
+    return rows
+
+
+def upsert_tracked_asins(
+    supabase: Client,
+    rows: List[Dict[str, Any]],
+) -> int:
+    if not rows:
+        return 0
+
+    try:
+        response = (
+            supabase.table("tracked_asins")
+            .upsert(
+                rows,
+                on_conflict="asin,locale",
+            )
+            .execute()
+        )
+    except Exception as exc:
+        print(f"[ERROR] upsert failed: {exc}")
+        return 0
+
+    data = getattr(response, "data", None)
+    response_count = len(data) if isinstance(data, list) else 0
+
+    print(f"[OK] upsert tracked_asins rows={len(rows)} response_count={response_count}")
+    return response_count
+
+
+def main() -> None:
+    supabase = create_supabase_client()
+
+    keepa_api_key = getenv_required("KEEPA_API_KEY")
+    locale = getenv_required("ASIN_LOCALE").lower()
+    category = getenv_required("ASIN_CATEGORY").lower()
+    category_id = getenv_required("CATEGORY_ID")
+    source = getenv_str("ASIN_SOURCE", "bestseller") or "bestseller"
+
+    top_n = getenv_int("TOP_N", DEFAULT_TOP_N)
+    max_insert = getenv_int("MAX_INSERT", DEFAULT_MAX_INSERT)
+    sleep_sec = getenv_int("SLEEP_SEC", DEFAULT_SLEEP_SEC)
+    retry_count = getenv_int("RETRY_COUNT", DEFAULT_RETRY_COUNT)
+    retry_wait_sec = getenv_int("RETRY_WAIT_SEC", DEFAULT_RETRY_WAIT_SEC)
+
+    sub_category = getenv_str("SUB_CATEGORY")
+    display_category = getenv_str("DISPLAY_CATEGORY", category)
+    refresh_group = getenv_str("REFRESH_GROUP")
+    priority_env = getenv_str("PRIORITY")
+    priority = int(priority_env) if priority_env is not None and priority_env.isdigit() else None
+
+    captured_at = utc_now_iso()
+
+    data = request_bestseller_with_retry(
+        locale=locale,
+        category=category,
+        category_id=category_id,
+        keepa_api_key=keepa_api_key,
+        retry_count=retry_count,
+        retry_wait_sec=retry_wait_sec,
     )
 
-    r = requests.get(KEEPA_BESTSELLER_API, params=params, timeout=60)
-
-    if r.status_code == 429:
-        print("[429] rate limited on bestseller API")
-        return []
-
-    if r.status_code != 200:
-        print(f"[ERROR] HTTP {r.status_code} body={r.text[:500]}")
-        return []
-
-    try:
-        data = r.json()
-    except Exception as e:
-        print(f"[ERROR] invalid json on bestseller API: {e}")
-        return []
-
-    print(f"[DEBUG] bestseller response keys={list(data.keys())}")
-
-    asins = normalize_bestseller_response(data)
-    return asins
-
-
-def build_rows(asins: list[str]):
-    now = datetime.now(timezone.utc).isoformat()
-    rows = []
-
-    for asin in asins[:MAX_INSERT]:
-        rows.append({
-            "asin": asin,
-            "locale": LOCALE,
-            "category": CATEGORY,
-            "source": SOURCE,
-            "first_seen_at": now,
-            "last_seen_at": now,
-            "is_active": True,
-        })
-
-    return rows, now
-
-
-def upsert_tracked_asins(rows):
-    if not rows:
-        print("[SKIP] no rows to upsert")
-        return
-
-    try:
-        resp = supabase.table("tracked_asins").upsert(
-            rows,
-            on_conflict="asin,locale",
-            returning="representation"
-        ).execute()
-
-        count = len(resp.data or []) if hasattr(resp, "data") and resp.data else 0
-        print(f"[OK] upsert tracked_asins rows={len(rows)} response_count={count}")
-
-    except Exception as e:
-        print(f"[ERROR] failed to upsert tracked_asins: {e}")
-        raise
-
-
-def main():
-    validate()
-
-    asins = fetch_bestseller_asins()
+    asins = extract_asins(data, top_n=top_n)
 
     print(f"[INFO] fetched_asins={len(asins)}")
     print(f"[INFO] sample_asins={asins[:20]}")
@@ -185,16 +272,30 @@ def main():
         print("[SKIP] no bestseller asins fetched")
         return
 
-    rows, now = build_rows(asins)
-    upsert_tracked_asins(rows)
+    rows = build_upsert_rows(
+        asins=asins,
+        locale=locale,
+        category=category,
+        source=source,
+        captured_at=captured_at,
+        max_insert=max_insert,
+        sub_category=sub_category,
+        display_category=display_category,
+        priority=priority,
+        refresh_group=refresh_group,
+    )
+
+    upsert_tracked_asins(supabase, rows)
+
+    if sleep_sec > 0:
+        time.sleep(sleep_sec)
 
     print("[DONE] bestseller ASIN import finished")
     print(
-        f"[DONE] locale={LOCALE} category={CATEGORY} "
-        f"category_id={CATEGORY_ID} captured_at={now}"
+        f"[DONE] locale={locale} category={category} "
+        f"sub_category={sub_category} category_id={category_id} "
+        f"captured_at={captured_at}"
     )
-
-    time.sleep(SLEEP_SEC)
 
 
 if __name__ == "__main__":

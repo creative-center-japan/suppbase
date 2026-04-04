@@ -1,9 +1,9 @@
-name: Fetch Bestseller ASINs UK Whey
+name: Fetch Bestseller ASINs US Whey
 
 on:
-  schedule:
-    - cron: "0 6 * * *"   # 15:00 JST
   workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * *"   # 09:00 JST
 
 jobs:
   fetch:
@@ -24,16 +24,21 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Fetch UK Whey bestseller ASINs
+      - name: Fetch US Whey bestseller ASINs
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
           KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
-          ASIN_LOCALE: uk
+          ASIN_LOCALE: us
           ASIN_CATEGORY: protein
-          CATEGORY_ID: 5977836031
+          SUB_CATEGORY: whey
+          DISPLAY_CATEGORY: protein
+          CATEGORY_ID: 6973717011
           ASIN_SOURCE: bestseller
           TOP_N: 100
           MAX_INSERT: 100
           SLEEP_SEC: 1
-        run: python scripts/fetch_bestseller_asins_to_supabase.py
+          RETRY_COUNT: 2
+          RETRY_WAIT_SEC: 70
+        run: |
+          python scripts/fetch_bestseller_asins_to_supabase.py
