@@ -8,12 +8,12 @@ import requests
 from supabase import Client, create_client
 
 KEEPA_DOMAIN_MAP = {
-    "jp": 5,
     "us": 1,
     "uk": 2,
+    "jp": 5,
 }
 
-BESTSELLER_API = "https://api.keepa.com/bestSeller"
+BESTSELLER_API = "https://api.keepa.com/bestsellers"
 
 DEFAULT_TIMEOUT = 60
 DEFAULT_TOP_N = 100
@@ -62,10 +62,9 @@ def utc_now_iso() -> str:
 
 
 def create_supabase_client() -> Client:
-    return create_client(
-        getenv_required("SUPABASE_URL"),
-        getenv_required("SUPABASE_SERVICE_ROLE"),
-    )
+    supabase_url = getenv_required("SUPABASE_URL")
+    supabase_key = getenv_required("SUPABASE_SERVICE_ROLE")
+    return create_client(supabase_url, supabase_key)
 
 
 def get_domain_id(locale: str) -> int:
@@ -84,10 +83,11 @@ def request_bestseller_with_retry(
     retry_count: int,
     retry_wait_sec: int,
     sublist: bool,
+    range_days: Optional[int],
 ) -> Dict[str, Any]:
     domain = get_domain_id(locale)
 
-    params = {
+    params: Dict[str, Any] = {
         "key": keepa_api_key,
         "domain": domain,
         "category": category_id,
@@ -95,12 +95,15 @@ def request_bestseller_with_retry(
 
     if sublist:
         params["sublist"] = 1
+    elif range_days is not None:
+        params["range"] = range_days
 
     for attempt in range(1, retry_count + 2):
         print(
             f"[INFO] request bestseller locale={locale} "
             f"category={category} category_id={category_id} "
-            f"domain={domain} sublist={sublist} attempt={attempt}"
+            f"domain={domain} sublist={sublist} range={range_days} "
+            f"attempt={attempt}"
         )
 
         try:
@@ -113,13 +116,15 @@ def request_bestseller_with_retry(
                 continue
             sys.exit(1)
 
-        print(f"[DEBUG] request_url={response.url.replace(keepa_api_key, '***')}")
+        safe_url = response.url.replace(keepa_api_key, "***")
+        print(f"[DEBUG] request_url={safe_url}")
 
         if response.status_code == 200:
             try:
                 data = response.json()
             except ValueError:
                 print("[ERROR] failed to parse JSON response")
+                print(f"[ERROR] response_body={response.text[:1000]}")
                 sys.exit(1)
 
             if isinstance(data, dict):
@@ -141,8 +146,8 @@ def request_bestseller_with_retry(
 
         if response.status_code == 404:
             print(
-                "[ERROR] keepa bestseller returned 404. "
-                "category_id may be invalid for API, or this node is not available via bestseller API."
+                "[ERROR] keepa bestsellers returned 404. "
+                "Check endpoint, category_id, locale/domain, or API availability."
             )
             print(f"[ERROR] response_body={response.text[:1000]}")
             sys.exit(1)
@@ -157,14 +162,28 @@ def extract_asins(data: Dict[str, Any], top_n: int) -> List[str]:
     if not isinstance(data, dict):
         return []
 
-    raw_list = (
-        data.get("asinList")
-        or data.get("bestSellersList")
-        or data.get("bestSellers")
-        or []
-    )
+    raw_list: Any = []
+
+    best_sellers = data.get("bestSellersList")
+
+    if isinstance(best_sellers, dict):
+        raw_list = (
+            best_sellers.get("asinList")
+            or best_sellers.get("asins")
+            or best_sellers.get("list")
+            or []
+        )
+    elif isinstance(best_sellers, list):
+        raw_list = best_sellers
+    else:
+        raw_list = (
+            data.get("asinList")
+            or data.get("asins")
+            or []
+        )
 
     if not isinstance(raw_list, list):
+        print(f"[ERROR] unexpected asin list format: {type(raw_list)}")
         return []
 
     cleaned: List[str] = []
@@ -249,6 +268,7 @@ def upsert_tracked_asins(supabase: Client, rows: List[Dict[str, Any]]) -> int:
 
     data = getattr(response, "data", None)
     response_count = len(data) if isinstance(data, list) else 0
+
     print(f"[OK] upsert tracked_asins rows={len(rows)} response_count={response_count}")
     return response_count
 
@@ -273,9 +293,12 @@ def main() -> None:
     refresh_group = getenv_str("REFRESH_GROUP")
     priority_env = getenv_str("PRIORITY")
     priority = int(priority_env) if priority_env is not None and priority_env.isdigit() else None
-    dry_run = getenv_bool("DRY_RUN", False)
 
-    sublist = getenv_bool("SUBLIST", True)
+    dry_run = getenv_bool("DRY_RUN", False)
+    sublist = getenv_bool("SUBLIST", False)
+
+    range_env = getenv_str("RANGE")
+    range_days = int(range_env) if range_env in {"0", "30", "90", "180"} else None
 
     captured_at = utc_now_iso()
 
@@ -287,6 +310,7 @@ def main() -> None:
         retry_count=retry_count,
         retry_wait_sec=retry_wait_sec,
         sublist=sublist,
+        range_days=range_days,
     )
 
     asins = extract_asins(data, top_n=top_n)
@@ -296,6 +320,7 @@ def main() -> None:
 
     if not asins:
         print("[ERROR] no bestseller asins fetched")
+        print(f"[DEBUG] response_preview={str(data)[:2000]}")
         sys.exit(1)
 
     rows = build_upsert_rows(
