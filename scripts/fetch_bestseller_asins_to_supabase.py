@@ -62,9 +62,10 @@ def utc_now_iso() -> str:
 
 
 def create_supabase_client() -> Client:
-    supabase_url = getenv_required("SUPABASE_URL")
-    supabase_key = getenv_required("SUPABASE_SERVICE_ROLE")
-    return create_client(supabase_url, supabase_key)
+    return create_client(
+        getenv_required("SUPABASE_URL"),
+        getenv_required("SUPABASE_SERVICE_ROLE"),
+    )
 
 
 def get_domain_id(locale: str) -> int:
@@ -82,6 +83,7 @@ def request_bestseller_with_retry(
     keepa_api_key: str,
     retry_count: int,
     retry_wait_sec: int,
+    sublist: bool,
 ) -> Dict[str, Any]:
     domain = get_domain_id(locale)
 
@@ -91,11 +93,14 @@ def request_bestseller_with_retry(
         "category": category_id,
     }
 
+    if sublist:
+        params["sublist"] = 1
+
     for attempt in range(1, retry_count + 2):
         print(
             f"[INFO] request bestseller locale={locale} "
             f"category={category} category_id={category_id} "
-            f"domain={domain} attempt={attempt}"
+            f"domain={domain} sublist={sublist} attempt={attempt}"
         )
 
         try:
@@ -108,8 +113,7 @@ def request_bestseller_with_retry(
                 continue
             sys.exit(1)
 
-        safe_url = response.url.replace(keepa_api_key, "***")
-        print(f"[DEBUG] request_url={safe_url}")
+        print(f"[DEBUG] request_url={response.url.replace(keepa_api_key, '***')}")
 
         if response.status_code == 200:
             try:
@@ -118,10 +122,8 @@ def request_bestseller_with_retry(
                 print("[ERROR] failed to parse JSON response")
                 sys.exit(1)
 
-            keys = list(data.keys()) if isinstance(data, dict) else []
-            print(f"[DEBUG] bestseller response keys={keys}")
-
             if isinstance(data, dict):
+                print(f"[DEBUG] response keys={list(data.keys())}")
                 print(f"[INFO] tokensLeft={data.get('tokensLeft')}")
                 print(f"[INFO] refillIn={data.get('refillIn')}")
                 print(f"[INFO] refillRate={data.get('refillRate')}")
@@ -140,7 +142,7 @@ def request_bestseller_with_retry(
         if response.status_code == 404:
             print(
                 "[ERROR] keepa bestseller returned 404. "
-                "Most likely invalid category_id for this locale/domain."
+                "category_id may be invalid for API, or this node is not available via bestseller API."
             )
             print(f"[ERROR] response_body={response.text[:1000]}")
             sys.exit(1)
@@ -152,7 +154,16 @@ def request_bestseller_with_retry(
 
 
 def extract_asins(data: Dict[str, Any], top_n: int) -> List[str]:
-    raw_list = data.get("bestSellersList", []) if isinstance(data, dict) else []
+    if not isinstance(data, dict):
+        return []
+
+    raw_list = (
+        data.get("asinList")
+        or data.get("bestSellersList")
+        or data.get("bestSellers")
+        or []
+    )
+
     if not isinstance(raw_list, list):
         return []
 
@@ -162,13 +173,15 @@ def extract_asins(data: Dict[str, Any], top_n: int) -> List[str]:
     for asin in raw_list:
         if not isinstance(asin, str):
             continue
+
         asin = asin.strip().upper()
-        if not asin:
+
+        if not asin or asin in seen:
             continue
-        if asin in seen:
-            continue
+
         seen.add(asin)
         cleaned.append(asin)
+
         if len(cleaned) >= top_n:
             break
 
@@ -262,6 +275,8 @@ def main() -> None:
     priority = int(priority_env) if priority_env is not None and priority_env.isdigit() else None
     dry_run = getenv_bool("DRY_RUN", False)
 
+    sublist = getenv_bool("SUBLIST", True)
+
     captured_at = utc_now_iso()
 
     data = request_bestseller_with_retry(
@@ -271,6 +286,7 @@ def main() -> None:
         keepa_api_key=keepa_api_key,
         retry_count=retry_count,
         retry_wait_sec=retry_wait_sec,
+        sublist=sublist,
     )
 
     asins = extract_asins(data, top_n=top_n)
