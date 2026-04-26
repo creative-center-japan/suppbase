@@ -33,7 +33,7 @@ jobs:
           ASIN_CATEGORY: protein
           SUB_CATEGORY: whey
           DISPLAY_CATEGORY: protein
-          CATEGORY_ID: 5977690031
+          CATEGORY_ID: 5977836031
           ASIN_SOURCE: bestseller
           TOP_N: 100
           MAX_INSERT: 100

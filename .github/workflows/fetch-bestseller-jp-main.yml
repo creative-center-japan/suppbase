@@ -1,4 +1,4 @@
-name: Fetch Bestseller ASINs JP Main
+name: Fetch Bestseller ASINs JP Protein
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ on:
 jobs:
   fetch:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -24,7 +24,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Fetch JP Whey bestseller ASINs
+      - name: Fetch JP Protein bestseller ASINs
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
@@ -34,25 +34,6 @@ jobs:
           SUB_CATEGORY: whey
           DISPLAY_CATEGORY: protein
           CATEGORY_ID: 3457072051
-          ASIN_SOURCE: bestseller
-          TOP_N: 100
-          MAX_INSERT: 100
-          SLEEP_SEC: 1
-          RETRY_COUNT: 2
-          RETRY_WAIT_SEC: 70
-        run: |
-          python scripts/fetch_bestseller_asins_to_supabase.py
-
-      - name: Fetch JP Soy bestseller ASINs
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
-          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
-          ASIN_LOCALE: jp
-          ASIN_CATEGORY: protein
-          SUB_CATEGORY: soy
-          DISPLAY_CATEGORY: protein
-          CATEGORY_ID: 3457071051
           ASIN_SOURCE: bestseller
           TOP_N: 100
           MAX_INSERT: 100

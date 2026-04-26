@@ -33,7 +33,7 @@ jobs:
           ASIN_CATEGORY: supplement
           SUB_CATEGORY: bcaa
           DISPLAY_CATEGORY: supplement
-          CATEGORY_ID: 3457012051
+          CATEGORY_ID: 3457072051   # ←ここ変更（プロテイン上位）
           ASIN_SOURCE: bestseller
           TOP_N: 100
           MAX_INSERT: 100
