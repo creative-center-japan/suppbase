@@ -1,5 +1,7 @@
 // suppbase\src\app\api\ranking\us\route.ts
 
+// suppbase\src\app\api\ranking\us\route.ts
+
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -15,15 +17,7 @@ const associateTag = process.env.AMAZON_ASSOCIATE_TAG || 'suppbase-22';
 export async function GET(req: NextRequest) {
   try {
     const sp = new URL(req.url).searchParams;
-    const type = (sp.get('type') ?? 'wpi').toLowerCase();
     const limit = Number(sp.get('limit') ?? 10);
-
-    if (!['wpi', 'soy'].includes(type)) {
-      return NextResponse.json(
-        { items: [], errorHint: 'invalid protein type' },
-        { status: 400 }
-      );
-    }
 
     const sql = `
       select
@@ -40,8 +34,9 @@ export async function GET(req: NextRequest) {
         sales_rank_drops90,
         sales_rank_drops180,
         protein_type
-      from v_ranking_us
-      order by rank
+      from v_ranking_multi
+      where locale = 'us'
+      order by rank asc
       limit $1
     `;
 
@@ -57,7 +52,7 @@ export async function GET(req: NextRequest) {
         brand: r.brand ?? '',
         price: r.price,
         rating: null,
-        reviewCount: null,
+        reviewCount: r.review_count ?? 0,
         score: r.suppbase_score,
         imageUrl: r.image_url ?? null,
         monthlySold: r.monthly_sold ?? 0,
