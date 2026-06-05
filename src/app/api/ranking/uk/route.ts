@@ -1,4 +1,4 @@
-// suppbase\src\app\api\ranking\uk\route.ts
+// suppbase/src/app/api/ranking/uk/route.ts
 
 export const runtime = 'nodejs';
 
@@ -10,7 +10,10 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
-const associateTag = process.env.AMAZON_ASSOCIATE_TAG_UK || process.env.AMAZON_ASSOCIATE_TAG || 'suppbase-22';
+const associateTag =
+  process.env.AMAZON_ASSOCIATE_TAG_UK ||
+  process.env.AMAZON_ASSOCIATE_TAG ||
+  'suppbase-22';
 
 export async function GET(req: NextRequest) {
   try {
@@ -43,7 +46,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       description:
         '英国Amazonの公開データをもとに、直近30日のランキング変動回数と月間販売数の目安を整理しています。',
-      items: rows.map(r => ({
+      items: rows.map((r) => ({
         rank: r.rank,
         asin: r.asin,
         title: r.title,
