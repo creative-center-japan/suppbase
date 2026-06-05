@@ -1,79 +1,112 @@
-// suppbase/src/app/api/ranking/uk/route.ts
+// suppbase/src/app/rankings/overseas/uk/page.tsx
 
-export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
-import { NextRequest, NextResponse } from 'next/server';
-import { Pool } from 'pg';
+type RankingItem = {
+  rank: number;
+  asin: string;
+  title: string;
+  brand: string;
+  price: number | null;
+  score: number | null;
+  imageUrl: string | null;
+  monthlySold: number;
+  salesRankDrops30: number;
+  salesRankDrops90: number;
+  salesRankDrops180: number;
+  proteinType: string | null;
+  affiliateUrl: string;
+};
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL!,
-  ssl: { rejectUnauthorized: false },
-});
-
-const associateTag =
-  process.env.AMAZON_ASSOCIATE_TAG_UK ||
-  process.env.AMAZON_ASSOCIATE_TAG ||
-  'suppbase-22';
-
-export async function GET(req: NextRequest) {
+async function getRanking(): Promise<RankingItem[]> {
   try {
-    const sp = new URL(req.url).searchParams;
-    const limit = Number(sp.get('limit') ?? 10);
+    const baseUrl =
+      process.env.NEXT_PUBLIC_SITE_URL ??
+      'https://suppbase.creative-center-j.com';
 
-    const sql = `
-      select
-        rank,
-        asin,
-        title,
-        brand,
-        price,
-        review_count,
-        image_url,
-        suppbase_score,
-        monthly_sold,
-        sales_rank_drops30,
-        sales_rank_drops90,
-        sales_rank_drops180,
-        protein_type
-      from v_ranking_multi
-      where locale = 'uk'
-      order by rank asc
-      limit $1
-    `;
-
-    const { rows } = await pool.query(sql, [limit]);
-
-    return NextResponse.json({
-      description:
-        '英国Amazonの公開データをもとに、直近30日のランキング変動回数と月間販売数の目安を整理しています。',
-      items: rows.map((r) => ({
-        rank: r.rank,
-        asin: r.asin,
-        title: r.title,
-        brand: r.brand ?? '',
-        price: r.price,
-        rating: null,
-        reviewCount: r.review_count ?? 0,
-        score: r.suppbase_score,
-        imageUrl: r.image_url ?? null,
-        monthlySold: r.monthly_sold ?? 0,
-        salesRankDrops30: r.sales_rank_drops30 ?? 0,
-        salesRankDrops90: r.sales_rank_drops90 ?? 0,
-        salesRankDrops180: r.sales_rank_drops180 ?? 0,
-        proteinType: r.protein_type ?? null,
-        affiliateUrl: `https://www.amazon.co.uk/dp/${r.asin}?tag=${associateTag}`,
-      })),
+    const res = await fetch(`${baseUrl}/api/ranking/uk?limit=20`, {
+      cache: 'no-store',
     });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error('[UK ranking error]', msg);
 
-    return NextResponse.json(
-      {
-        items: [],
-        errorHint: msg,
-      },
-      { status: 500 }
-    );
+    if (!res.ok) {
+      return [];
+    }
+
+    const json = await res.json();
+    return Array.isArray(json.items) ? json.items : [];
+  } catch (e) {
+    console.error('[UK ranking page error]', e);
+    return [];
   }
+}
+
+export default async function OverseasUKPage() {
+  const items = await getRanking();
+
+  return (
+    <main className="min-h-screen bg-white px-4 py-16">
+      <div className="mx-auto max-w-5xl text-center">
+        <p className="mb-3 text-sm tracking-widest text-gray-400">
+          OVERSEAS RANKING
+        </p>
+
+        <h1 className="mb-4 text-4xl font-bold text-gray-900">
+          GB United Kingdom
+        </h1>
+
+        <p className="mb-8 text-gray-600">
+          イギリス市場のサプリ・プロテインランキングです。
+        </p>
+
+        {items.length === 0 ? (
+          <div className="mx-auto max-w-xl rounded-lg border border-dashed border-gray-300 p-8 text-gray-500">
+            UKランキングデータがまだありません。
+            <br />
+            UK商品の収集が完了すると、ここにランキングが表示されます。
+          </div>
+        ) : (
+          <div className="space-y-4 text-left">
+            {items.map((item) => (
+              <div
+                key={item.asin}
+                className="flex gap-4 rounded-xl border p-4"
+              >
+                <div className="w-12 text-xl font-bold">#{item.rank}</div>
+
+                {item.imageUrl ? (
+                  <img
+                    src={item.imageUrl}
+                    alt={item.title}
+                    className="h-24 w-24 object-contain"
+                  />
+                ) : (
+                  <div className="flex h-24 w-24 items-center justify-center rounded bg-gray-100 text-xs text-gray-400">
+                    No Image
+                  </div>
+                )}
+
+                <div className="flex-1">
+                  <h2 className="font-semibold">{item.title}</h2>
+                  <p className="text-sm text-gray-500">{item.brand}</p>
+                  <p className="text-sm">Score: {item.score ?? '-'}</p>
+                  <p className="text-sm">
+                    価格: {item.price ? `£${(item.price / 100).toFixed(2)}` : '-'}
+                  </p>
+
+                  <a
+                    href={item.affiliateUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-2 inline-block text-sm underline"
+                  >
+                    Amazon UKで見る
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </main>
+  );
 }
